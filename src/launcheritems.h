@@ -29,6 +29,8 @@ Q_SIGNALS:
     void changed();
 
 private:
+    void ensureDefaultLaunchers() const;
+
     QString m_menuDir;
 };
 

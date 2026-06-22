@@ -10,7 +10,9 @@
 #include <KConfigGroup>
 
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
+#include <QTextStream>
 
 LauncherItems::LauncherItems(QObject *parent)
     : QObject(parent)
@@ -33,6 +35,10 @@ QList<Item *> LauncherItems::load() const
     }
 
     const QStringList files = dir.entryList({QStringLiteral("*.desktop")}, QDir::Files, QDir::Name);
+    if (files.isEmpty()) {
+        ensureDefaultLaunchers();
+    }
+
     for (const QString &file : files) {
         const QString path = dir.absoluteFilePath(file);
         KDesktopFile df(path);
@@ -67,4 +73,48 @@ void LauncherItems::removeLauncher(const QString &desktopFile)
 {
     QFile::remove(desktopFile);
     Q_EMIT changed();
+}
+
+void LauncherItems::ensureDefaultLaunchers() const
+{
+    const QString marker = m_menuDir + QStringLiteral(".defaults-created");
+    if (QFile::exists(marker)) {
+        return;
+    }
+
+    struct DefaultLauncher {
+        QString fileName;
+        QString name;
+        QString exec;
+        QString icon;
+    };
+
+    const QList<DefaultLauncher> defaults = {
+        {QStringLiteral("10-filemanager.desktop"), QStringLiteral("File Manager"), QStringLiteral("dolphin"), QStringLiteral("system-file-manager")},
+        {QStringLiteral("20-terminal.desktop"), QStringLiteral("Terminal"), QStringLiteral("konsole"), QStringLiteral("utilities-terminal")},
+        {QStringLiteral("30-browser.desktop"), QStringLiteral("Web Browser"), QStringLiteral("firefox"), QStringLiteral("internet-web-browser")},
+        {QStringLiteral("40-settings.desktop"), QStringLiteral("System Settings"), QStringLiteral("systemsettings5"), QStringLiteral("preferences-system")},
+    };
+
+    for (const auto &launcher : defaults) {
+        const QString path = m_menuDir + launcher.fileName;
+        QFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            continue;
+        }
+
+        QTextStream out(&file);
+        out << QStringLiteral("[Desktop Entry]\n");
+        out << QStringLiteral("Name=") << launcher.name << QStringLiteral("\n");
+        out << QStringLiteral("Exec=") << launcher.exec << QStringLiteral("\n");
+        out << QStringLiteral("Icon=") << launcher.icon << QStringLiteral("\n");
+        out << QStringLiteral("Type=Application\n");
+        out << QStringLiteral("Terminal=false\n");
+        file.close();
+    }
+
+    QFile markerFile(marker);
+    if (markerFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        markerFile.close();
+    }
 }

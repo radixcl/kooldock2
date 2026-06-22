@@ -4,6 +4,8 @@
 
 #include "windowactions.h"
 
+#include "windowtasks.h"
+
 #include <KWindowInfo>
 #include <KWindowSystem>
 #include <KX11Extras>
@@ -18,8 +20,9 @@ static xcb_connection_t *x11Connection()
     return x11App ? x11App->connection() : nullptr;
 }
 
-WindowActions::WindowActions(QObject *parent)
+WindowActions::WindowActions(WindowTasks *tasks, QObject *parent)
     : QObject(parent)
+    , m_tasks(tasks)
 {
 }
 
@@ -36,8 +39,14 @@ void WindowActions::setCurrentWindow(quint64 id)
 
 void WindowActions::minimize()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
-    KX11Extras::minimizeWindow(static_cast<WId>(m_current));
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestMinimize(m_current);
+        return;
+    }
+    if (KWindowSystem::isPlatformX11()) {
+        KX11Extras::minimizeWindow(static_cast<WId>(m_current));
+    }
 }
 
 void WindowActions::maximize()
@@ -53,15 +62,25 @@ void WindowActions::maximize()
 
 void WindowActions::restore()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
-    KX11Extras::clearState(static_cast<WId>(m_current), NET::MaxVert | NET::MaxHoriz);
-    KX11Extras::unminimizeWindow(static_cast<WId>(m_current));
-    KX11Extras::activateWindow(static_cast<WId>(m_current));
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestActivate(m_current);
+        return;
+    }
+    if (KWindowSystem::isPlatformX11()) {
+        KX11Extras::clearState(static_cast<WId>(m_current), NET::MaxVert | NET::MaxHoriz);
+        KX11Extras::unminimizeWindow(static_cast<WId>(m_current));
+        KX11Extras::activateWindow(static_cast<WId>(m_current));
+    }
 }
 
 void WindowActions::close()
 {
     if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestClose(m_current);
+        return;
+    }
     if (auto *conn = x11Connection()) {
         NETRootInfo ri(conn, NET::CloseWindow);
         ri.closeWindowRequest(static_cast<xcb_window_t>(m_current));
@@ -121,6 +140,12 @@ void WindowActions::sendToDesktop(int desktop)
 
 void WindowActions::activate()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
-    KX11Extras::activateWindow(static_cast<WId>(m_current));
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestActivate(m_current);
+        return;
+    }
+    if (KWindowSystem::isPlatformX11()) {
+        KX11Extras::activateWindow(static_cast<WId>(m_current));
+    }
 }

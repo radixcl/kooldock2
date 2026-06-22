@@ -73,8 +73,8 @@ private:
 
     QPointer<QQuickView> m_view;
     LayerShellQt::Window *m_layer = nullptr;
-    DockModel *m_model;
     WindowTasks *m_tasks;
+    DockModel *m_model;
     WindowActions *m_windowActions;
     KSharedConfig::Ptr m_config;
     bool m_containsMouse = false;

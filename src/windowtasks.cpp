@@ -4,13 +4,29 @@
 
 #include "windowtasks.h"
 
+#include "waylandwindowtasks.h"
+
+#include <KWindowInfo>
 #include <KWindowSystem>
 #include <KX11Extras>
+
+#include <QDebug>
+#include <QGuiApplication>
+#include <qnativeinterface.h>
+
+#include <netwm.h>
+
+static xcb_connection_t *x11Connection()
+{
+    auto *x11App = qApp->nativeInterface<QNativeInterface::QX11Application>();
+    return x11App ? x11App->connection() : nullptr;
+}
 
 WindowTasks::WindowTasks(QObject *parent)
     : QObject(parent)
 {
-    m_available = (KWindowSystem::isPlatformX11() && KX11Extras::self());
+    m_isX11 = KWindowSystem::isPlatformX11();
+    m_available = m_isX11;
 }
 
 bool WindowTasks::isAvailable() const
@@ -18,22 +34,149 @@ bool WindowTasks::isAvailable() const
     return m_available;
 }
 
+WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
+{
+    TaskData data;
+    data.windowId = windowId;
+
+    if (m_waylandTasks) {
+        const WaylandWindowTasks::TaskData waylandData = m_waylandTasks->taskData(windowId);
+        data.title = waylandData.title;
+        data.iconName = waylandData.iconName;
+        data.minimized = waylandData.minimized;
+        data.active = waylandData.active;
+        data.skipTaskbar = waylandData.skipTaskbar;
+        data.skipSwitcher = waylandData.skipSwitcher;
+        data.onAllDesktops = waylandData.onAllDesktops;
+        return data;
+    }
+
+    if (!m_isX11) {
+        return data;
+    }
+
+    const KWindowInfo info(static_cast<WId>(windowId),
+                           NET::WMState | NET::WMName | NET::WMVisibleName,
+                           NET::WM2WindowClass);
+    if (!info.valid()) {
+        return data;
+    }
+
+    data.title = info.visibleName();
+    data.iconName = QString::fromLatin1(info.windowClassClass());
+    data.minimized = info.isMinimized();
+    data.active = (windowId == m_activeWindow);
+    data.skipTaskbar = info.state() & NET::SkipTaskbar;
+    data.skipSwitcher = info.state() & NET::SkipSwitcher;
+    data.onAllDesktops = (info.desktop() == NET::OnAllDesktops);
+    data.desktop = info.desktop();
+    return data;
+}
+
+void WindowTasks::requestActivate(quint64 windowId)
+{
+    if (m_waylandTasks) {
+        m_waylandTasks->requestActivate(windowId);
+        return;
+    }
+    if (m_isX11) {
+        KX11Extras::activateWindow(static_cast<WId>(windowId));
+    }
+}
+
+void WindowTasks::requestMinimize(quint64 windowId)
+{
+    if (m_waylandTasks) {
+        m_waylandTasks->requestMinimize(windowId);
+        return;
+    }
+    if (m_isX11) {
+        KX11Extras::minimizeWindow(static_cast<WId>(windowId));
+    }
+}
+
+void WindowTasks::requestClose(quint64 windowId)
+{
+    if (m_waylandTasks) {
+        m_waylandTasks->requestClose(windowId);
+        return;
+    }
+    if (m_isX11) {
+        NETRootInfo ri(x11Connection(), NET::CloseWindow);
+        ri.closeWindowRequest(static_cast<xcb_window_t>(windowId));
+    }
+}
+
+QList<quint64> WindowTasks::windowIds() const
+{
+    if (m_waylandTasks) {
+        return m_waylandTasks->windowIds();
+    }
+
+    QList<quint64> result;
+    if (m_isX11 && KX11Extras::self()) {
+        const QList<WId> windows = KX11Extras::windows();
+        result.reserve(windows.size());
+        for (WId wid : windows) {
+            result.append(static_cast<quint64>(wid));
+        }
+    }
+    return result;
+}
+
+quint64 WindowTasks::activeWindow() const
+{
+    if (m_waylandTasks) {
+        return m_waylandTasks->activeWindow();
+    }
+    return m_activeWindow;
+}
+
 void WindowTasks::start()
 {
-    if (!m_available) {
-        // TODO: Wayland taskbar via org_kde_plasma_window_management protocol
-        // (Qt6Wayland client extension). For now, only launchers are shown on Wayland.
+    qDebug() << "WindowTasks::start() platform=" << QGuiApplication::platformName() << "isX11=" << m_isX11;
+
+    if (m_isX11 && KX11Extras::self()) {
+        m_available = true;
+        m_activeWindow = static_cast<quint64>(KX11Extras::activeWindow());
+        Q_EMIT availabilityChanged();
+
+        connect(KX11Extras::self(), &KX11Extras::windowAdded,
+                this, &WindowTasks::slotWindowAdded);
+        connect(KX11Extras::self(), &KX11Extras::windowRemoved,
+                this, &WindowTasks::slotWindowRemoved);
+        connect(KX11Extras::self(), &KX11Extras::windowChanged,
+                this, &WindowTasks::slotWindowChanged);
+        connect(KX11Extras::self(), &KX11Extras::activeWindowChanged,
+                this, &WindowTasks::slotActiveWindowChanged);
         return;
     }
 
-    connect(KX11Extras::self(), &KX11Extras::windowAdded,
-            this, &WindowTasks::slotWindowAdded);
-    connect(KX11Extras::self(), &KX11Extras::windowRemoved,
-            this, &WindowTasks::slotWindowRemoved);
-    connect(KX11Extras::self(), &KX11Extras::windowChanged,
-            this, &WindowTasks::slotWindowChanged);
-    connect(KX11Extras::self(), &KX11Extras::activeWindowChanged,
-            this, &WindowTasks::slotActiveWindowChanged);
+    if (QGuiApplication::platformName().contains(QStringLiteral("wayland"))) {
+        qDebug() << "WindowTasks::start() creating WaylandWindowTasks";
+        m_waylandTasks = new WaylandWindowTasks(this);
+        connect(m_waylandTasks, &WaylandWindowTasks::windowAdded,
+                this, &WindowTasks::windowAdded);
+        connect(m_waylandTasks, &WaylandWindowTasks::windowRemoved,
+                this, &WindowTasks::windowRemoved);
+        connect(m_waylandTasks, &WaylandWindowTasks::windowChanged,
+                this, &WindowTasks::windowChanged);
+        connect(m_waylandTasks, &WaylandWindowTasks::activeWindowChanged,
+                this, &WindowTasks::activeWindowChanged);
+        connect(m_waylandTasks, &WaylandWindowTasks::activeChanged, this, [this]() {
+            const bool nowAvailable = m_waylandTasks && m_waylandTasks->isActive();
+            qDebug() << "WindowTasks: WaylandWindowTasks activeChanged nowAvailable=" << nowAvailable;
+            if (m_available != nowAvailable) {
+                m_available = nowAvailable;
+                Q_EMIT availabilityChanged();
+            }
+        });
+        m_waylandTasks->start();
+
+        m_available = m_waylandTasks->isActive();
+        qDebug() << "WindowTasks::start() wayland initial available=" << m_available;
+        Q_EMIT availabilityChanged();
+    }
 }
 
 void WindowTasks::slotWindowAdded(WId id)
@@ -55,5 +198,6 @@ void WindowTasks::slotWindowChanged(WId id, const NET::Properties &props, const 
 
 void WindowTasks::slotActiveWindowChanged(WId id)
 {
-    Q_EMIT activeWindowChanged(static_cast<quint64>(id));
+    m_activeWindow = static_cast<quint64>(id);
+    Q_EMIT activeWindowChanged(m_activeWindow);
 }

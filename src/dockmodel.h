@@ -13,6 +13,8 @@
 class Item;
 class LauncherItems;
 
+#include "windowtasks.h"
+
 class DockModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -20,7 +22,7 @@ class DockModel : public QAbstractListModel
     Q_PROPERTY(QVariantList items READ items NOTIFY itemsChanged)
 
 public:
-    explicit DockModel(QObject *parent = nullptr);
+    explicit DockModel(WindowTasks *tasks, QObject *parent = nullptr);
     ~DockModel() override;
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -53,10 +55,12 @@ private:
     void rebuild();
     void updateIndices();
     int insertTaskSorted(Item *item);
+    bool shouldShowTask(const WindowTasks::TaskData &data) const;
 
     QList<Item *> m_items;
-    QHash<quint64, Item *> m_tasks;
+    QHash<quint64, Item *> m_taskItems;
     LauncherItems *m_launchers;
+    WindowTasks *m_tasks = nullptr;
     quint64 m_activeWindow = 0;
 };
 

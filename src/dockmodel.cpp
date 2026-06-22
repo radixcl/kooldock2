@@ -6,6 +6,7 @@
 #include "item.h"
 #include "kooldocksettings.h"
 #include "launcheritems.h"
+#include "windowtasks.h"
 
 #include <KDesktopFile>
 #include <KConfigGroup>
@@ -15,9 +16,12 @@
 #include <KIO/ApplicationLauncherJob>
 #include <KIO/CommandLauncherJob>
 
-DockModel::DockModel(QObject *parent)
+#include <QDebug>
+
+DockModel::DockModel(WindowTasks *tasks, QObject *parent)
     : QAbstractListModel(parent)
     , m_launchers(new LauncherItems(this))
+    , m_tasks(tasks)
 {
     connect(m_launchers, &LauncherItems::changed, this, &DockModel::onLaunchersChanged);
     rebuild();
@@ -58,11 +62,13 @@ void DockModel::activate(int row)
 
 void DockModel::activateWindow(quint64 windowId)
 {
-    if (!windowId || !KWindowSystem::isPlatformX11()) return;
-    if (windowId == m_activeWindow) {
-        KX11Extras::minimizeWindow(static_cast<WId>(windowId));
+    if (!windowId || !m_tasks) return;
+
+    const WindowTasks::TaskData data = m_tasks->taskData(windowId);
+    if (data.active) {
+        m_tasks->requestMinimize(windowId);
     } else {
-        KX11Extras::activateWindow(static_cast<WId>(windowId));
+        m_tasks->requestActivate(windowId);
     }
 }
 
@@ -100,15 +106,14 @@ void DockModel::launch(int row)
 void DockModel::reload()
 {
     m_items.clear();
-    m_tasks.clear();
+    m_taskItems.clear();
     m_items = m_launchers->load();
 
-    if (KoolDockSettings::showTaskbar() && KWindowSystem::isPlatformX11()) {
-        const QList<WId> windows = KX11Extras::windows();
-        for (WId wid : windows) {
-            onWindowAdded(static_cast<quint64>(wid));
+    if (KoolDockSettings::showTaskbar() && m_tasks && m_tasks->isAvailable()) {
+        for (quint64 wid : m_tasks->windowIds()) {
+            onWindowAdded(wid);
         }
-        m_activeWindow = static_cast<quint64>(KX11Extras::activeWindow());
+        m_activeWindow = m_tasks->activeWindow();
     }
     updateIndices();
 
@@ -140,34 +145,80 @@ int DockModel::insertTaskSorted(Item *item)
     return firstTask;
 }
 
+bool DockModel::shouldShowTask(const WindowTasks::TaskData &data) const
+{
+    if (data.skipTaskbar) {
+        qDebug() << "shouldShowTask: rejected skipTaskbar" << data.title;
+        return false;
+    }
+    if (data.skipSwitcher) {
+        qDebug() << "shouldShowTask: rejected skipSwitcher" << data.title;
+        return false;
+    }
+    if (KoolDockSettings::ignoreList().contains(data.title)) {
+        qDebug() << "shouldShowTask: rejected ignoreList" << data.title;
+        return false;
+    }
+    if (KoolDockSettings::minimizedOnly() && !data.minimized) {
+        qDebug() << "shouldShowTask: rejected minimizedOnly" << data.title;
+        return false;
+    }
+    if (KoolDockSettings::currentDesktopOnly() && KWindowSystem::isPlatformX11() &&
+        !data.onAllDesktops && data.desktop != KX11Extras::currentDesktop()) {
+        qDebug() << "shouldShowTask: rejected currentDesktopOnly" << data.title;
+        return false;
+    }
+
+    // On X11 we keep the original window type filter. On Wayland the
+    // compositor already filters what it exposes through the protocol, so we
+    // accept everything that isn't explicitly skipped.
+    if (KWindowSystem::isPlatformX11()) {
+        const KWindowInfo info(static_cast<WId>(data.windowId),
+                               NET::WMWindowType);
+        if (!info.valid()) {
+            return false;
+        }
+        const auto types = NET::NormalMask | NET::DialogMask | NET::UtilityMask;
+        if (!(info.windowType(types) == NET::Normal || info.windowType(types) == NET::Dialog
+              || info.windowType(types) == NET::Utility)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void DockModel::onWindowAdded(quint64 windowId)
 {
-    if (!KoolDockSettings::showTaskbar() || !KWindowSystem::isPlatformX11()) return;
-    if (m_tasks.contains(windowId)) return;
+    qDebug() << "DockModel::onWindowAdded id=" << windowId;
+    if (!KoolDockSettings::showTaskbar() || !m_tasks || !m_tasks->isAvailable()) {
+        qDebug() << "  rejected: showTaskbar=" << KoolDockSettings::showTaskbar()
+                 << "tasks=" << m_tasks << "available=" << (m_tasks ? m_tasks->isAvailable() : false);
+        return;
+    }
+    if (m_taskItems.contains(windowId)) {
+        qDebug() << "  already tracked";
+        return;
+    }
 
-    const KWindowInfo info(static_cast<WId>(windowId),
-                           NET::WMWindowType | NET::WMState | NET::WMName | NET::WMVisibleName,
-                           NET::WM2WindowClass);
-    if (!info.valid()) return;
-    const auto types = NET::NormalMask | NET::DialogMask | NET::UtilityMask;
-    if (!(info.windowType(types) == NET::Normal || info.windowType(types) == NET::Dialog
-          || info.windowType(types) == NET::Utility)) return;
-    if (info.state() & NET::SkipTaskbar) return;
-    if (KoolDockSettings::ignoreList().contains(info.name())) return;
-    if (KoolDockSettings::currentDesktopOnly() &&
-        info.desktop() != KX11Extras::currentDesktop() && info.desktop() != NET::OnAllDesktops) return;
-    if (KoolDockSettings::minimizedOnly() && !info.isMinimized()) return;
+    const WindowTasks::TaskData data = m_tasks->taskData(windowId);
+    qDebug() << "  title=" << data.title << "icon=" << data.iconName
+             << "skipTaskbar=" << data.skipTaskbar << "skipSwitcher=" << data.skipSwitcher
+             << "minimized=" << data.minimized << "active=" << data.active;
+    if (!shouldShowTask(data)) return;
 
-    auto *item = new Item(Item::Kind::Task, info.visibleName(), QString(), QString(), windowId);
-    item->setMinimized(info.isMinimized());
-    m_tasks.insert(windowId, item);
+    auto *item = new Item(Item::Kind::Task, data.title, data.iconName, QString(), windowId);
+    item->setMinimized(data.minimized);
+    item->setActive(data.active);
+    m_taskItems.insert(windowId, item);
     insertTaskSorted(item);
+    qDebug() << "  inserted, count=" << m_items.size();
 }
 
 void DockModel::onWindowRemoved(quint64 windowId)
 {
-    if (!m_tasks.contains(windowId)) return;
-    Item *item = m_tasks.take(windowId);
+    if (!m_taskItems.contains(windowId)) return;
+    Item *item = m_taskItems.take(windowId);
     const int row = m_items.indexOf(item);
     if (row >= 0) {
         beginRemoveRows({}, row, row);
@@ -182,19 +233,20 @@ void DockModel::onWindowRemoved(quint64 windowId)
 
 void DockModel::onWindowChanged(quint64 windowId)
 {
-    if (!m_tasks.contains(windowId) || !KWindowSystem::isPlatformX11()) return;
-    Item *item = m_tasks.value(windowId);
-    const KWindowInfo info(static_cast<WId>(windowId), NET::WMName | NET::WMVisibleName | NET::WMState);
-    if (!info.valid()) return;
-    item->setName(info.visibleName());
-    item->setMinimized(info.isMinimized());
-    item->setActive(windowId == m_activeWindow);
+    if (!m_taskItems.contains(windowId) || !m_tasks) return;
 
-    if (KoolDockSettings::currentDesktopOnly() &&
-        info.desktop() != KX11Extras::currentDesktop() && info.desktop() != NET::OnAllDesktops) {
+    Item *item = m_taskItems.value(windowId);
+    const WindowTasks::TaskData data = m_tasks->taskData(windowId);
+
+    if (!shouldShowTask(data)) {
         onWindowRemoved(windowId);
         return;
     }
+
+    item->setName(data.title);
+    item->setIconName(data.iconName);
+    item->setMinimized(data.minimized);
+    item->setActive(data.active);
 
     const int row = m_items.indexOf(item);
     if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
@@ -205,14 +257,14 @@ void DockModel::onActiveWindowChanged(quint64 windowId)
     if (m_activeWindow == windowId) return;
     quint64 old = m_activeWindow;
     m_activeWindow = windowId;
-    if (old && m_tasks.contains(old)) {
-        m_tasks[old]->setActive(false);
-        int r = m_items.indexOf(m_tasks[old]);
+    if (old && m_taskItems.contains(old)) {
+        m_taskItems[old]->setActive(false);
+        int r = m_items.indexOf(m_taskItems[old]);
         if (r >= 0) Q_EMIT dataChanged(index(r), index(r));
     }
-    if (windowId && m_tasks.contains(windowId)) {
-        m_tasks[windowId]->setActive(true);
-        int r = m_items.indexOf(m_tasks[windowId]);
+    if (windowId && m_taskItems.contains(windowId)) {
+        m_taskItems[windowId]->setActive(true);
+        int r = m_items.indexOf(m_taskItems[windowId]);
         if (r >= 0) Q_EMIT dataChanged(index(r), index(r));
     }
 }

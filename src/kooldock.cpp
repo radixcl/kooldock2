@@ -57,15 +57,16 @@ void KoolDock::create(QObject *parent, bool showPreferences)
 
 KoolDock::KoolDock(QObject *parent)
     : QObject(parent)
-    , m_model(new DockModel(this))
     , m_tasks(new WindowTasks(this))
-    , m_windowActions(new WindowActions(this))
+    , m_model(new DockModel(m_tasks, this))
+    , m_windowActions(new WindowActions(m_tasks, this))
     , m_config(KSharedConfig::openConfig(QStringLiteral("kooldockrc")))
 {
     connect(m_tasks, &WindowTasks::windowAdded, m_model, &DockModel::onWindowAdded);
     connect(m_tasks, &WindowTasks::windowRemoved, m_model, &DockModel::onWindowRemoved);
     connect(m_tasks, &WindowTasks::windowChanged, m_model, &DockModel::onWindowChanged);
     connect(m_tasks, &WindowTasks::activeWindowChanged, m_model, &DockModel::onActiveWindowChanged);
+    connect(m_tasks, &WindowTasks::availabilityChanged, m_model, &DockModel::reload);
 
     m_tasks->start();
 

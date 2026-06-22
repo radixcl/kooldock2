@@ -7,13 +7,15 @@
 
 #include <QObject>
 
+class WindowTasks;
+
 class WindowActions : public QObject
 {
     Q_OBJECT
     Q_PROPERTY(quint64 currentWindow READ currentWindow WRITE setCurrentWindow NOTIFY currentWindowChanged)
 
 public:
-    explicit WindowActions(QObject *parent = nullptr);
+    explicit WindowActions(WindowTasks *tasks, QObject *parent = nullptr);
 
     quint64 currentWindow() const;
     void setCurrentWindow(quint64 id);
@@ -35,6 +37,7 @@ Q_SIGNALS:
 
 private:
     quint64 m_current = 0;
+    WindowTasks *m_tasks = nullptr;
 };
 
 #endif

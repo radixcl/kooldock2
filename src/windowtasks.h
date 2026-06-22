@@ -5,11 +5,14 @@
 #ifndef WINDOWTASKS_H
 #define WINDOWTASKS_H
 
+#include <QList>
 #include <QObject>
 
 #include <netwm_def.h>
 
 #include <QWidgetList> // For WId
+
+class WaylandWindowTasks;
 
 class WindowTasks : public QObject
 {
@@ -18,6 +21,25 @@ public:
     explicit WindowTasks(QObject *parent = nullptr);
 
     bool isAvailable() const;
+
+    struct TaskData {
+        quint64 windowId = 0;
+        QString title;
+        QString iconName;
+        bool minimized = false;
+        bool active = false;
+        bool skipTaskbar = false;
+        bool skipSwitcher = false;
+        bool onAllDesktops = false;
+        int desktop = -1;
+    };
+    QList<quint64> windowIds() const;
+    quint64 activeWindow() const;
+    TaskData taskData(quint64 windowId) const;
+
+    void requestActivate(quint64 windowId);
+    void requestMinimize(quint64 windowId);
+    void requestClose(quint64 windowId);
 
 public Q_SLOTS:
     void start();
@@ -37,6 +59,9 @@ private Q_SLOTS:
 
 private:
     bool m_available = false;
+    bool m_isX11 = false;
+    quint64 m_activeWindow = 0;
+    WaylandWindowTasks *m_waylandTasks = nullptr;
 };
 
 #endif

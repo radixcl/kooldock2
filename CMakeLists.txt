@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(kooldock2 VERSION 0.5.0 LANGUAGES CXX)
+project(kooldock2 VERSION 0.5.0 LANGUAGES CXX C)
 
 set(PROJECT_BUG_ADDRESS "https://github.com/anomalyco/kooldock2/issues")
 
@@ -50,6 +50,14 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
 )
 
 find_package(LayerShellQt REQUIRED)
+
+find_path(PLASMA_WAYLAND_PROTOCOLS_DIR
+    NAMES plasma-window-management.xml
+    PATHS /usr/share/plasma-wayland-protocols
+)
+if(NOT PLASMA_WAYLAND_PROTOCOLS_DIR)
+    message(FATAL_ERROR "plasma-wayland-protocols is required (plasma-window-management.xml not found)")
+endif()
 
 add_subdirectory(src)
 add_subdirectory(data)
