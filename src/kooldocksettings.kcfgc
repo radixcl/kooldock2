@@ -1,0 +1,7 @@
+File=../data/kooldock.kcfg
+ClassName=KoolDockSettings
+Singleton=true
+Mutators=true
+ItemAccessors=true
+MemberAccess=public
+GenerateProperties=true

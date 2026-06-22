@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/">
+    <file alias="qml/Main.qml">../qml/Main.qml</file>
+    <file alias="qml/DockBar.qml">../qml/DockBar.qml</file>
+    <file alias="qml/DockItem.qml">../qml/DockItem.qml</file>
+    <file alias="qml/SettingsDialog.qml">../qml/SettingsDialog.qml</file>
+  </qresource>
+</RCC>

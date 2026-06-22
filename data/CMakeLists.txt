@@ -1,0 +1,1 @@
+install(FILES kooldock.kcfg DESTINATION ${KDE_INSTALL_KCFGDIR})

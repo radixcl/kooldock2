@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name="kooldockrc"/>
+  <group name="kooldock">
+    <!-- General -->
+    <entry name="autoHide" type="Bool">
+      <label>Hide the dock until the pointer reaches the screen edge</label>
+      <default>false</default>
+    </entry>
+    <entry name="hideOnClick" type="Bool">
+      <label>Hide the dock when the user clicks an item</label>
+      <default>false</default>
+    </entry>
+    <entry name="hideTimer" type="Int">
+      <label>Milliseconds to wait before showing the dock when the pointer reaches the edge</label>
+      <default>125</default>
+      <min>0</min>
+      <max>2000</max>
+    </entry>
+    <entry name="stayBelow" type="Bool">
+      <label>Keep the dock below other windows when not in use</label>
+      <default>false</default>
+    </entry>
+    <entry name="priority" type="Int">
+      <label>Nice priority for the dock process (0 = max, 19 = min)</label>
+      <default>5</default>
+      <min>0</min>
+      <max>19</max>
+    </entry>
+    <entry name="firstRun" type="Bool">
+      <label>Whether this is the first time the user runs kooldock2</label>
+      <default>true</default>
+    </entry>
+
+    <!-- Placement / orientation -->
+    <entry name="orientation" type="Int">
+      <label>Screen edge the dock is anchored to: 0 = bottom, 1 = left, 2 = top, 3 = right</label>
+      <default>0</default>
+      <min>0</min>
+      <max>3</max>
+    </entry>
+    <entry name="percentPos" type="Int">
+      <label>Position of the dock along the screen edge, as a percentage</label>
+      <default>50</default>
+      <min>0</min>
+      <max>100</max>
+    </entry>
+
+    <!-- Sizes -->
+    <entry name="smallIconSize" type="Int">
+      <label>Size of the icons when no magnification is applied</label>
+      <default>48</default>
+      <min>16</min>
+      <max>128</max>
+    </entry>
+    <entry name="bigIconSize" type="Int">
+      <label>Size of the icon under the pointer when magnification is fully grown</label>
+      <default>96</default>
+      <min>32</min>
+      <max>256</max>
+    </entry>
+    <entry name="bigIconAmount" type="Int">
+      <label>Number of icons that participate in the magnification (the zoomed neighbours)</label>
+      <default>5</default>
+      <min>4</min>
+      <max>10</max>
+    </entry>
+    <entry name="iconSpacing" type="Int">
+      <label>Space between icons, in pixels</label>
+      <default>10</default>
+      <min>0</min>
+      <max>64</max>
+    </entry>
+    <entry name="zoomSpeed" type="Int">
+      <label>Duration of the grow/shrink animation in milliseconds</label>
+      <default>200</default>
+      <min>50</min>
+      <max>1000</max>
+    </entry>
+    <entry name="showNames" type="Bool">
+      <label>Show the name of the icon on a tooltip when the pointer is over it</label>
+      <default>true</default>
+    </entry>
+    <entry name="cleanerTooltip" type="Bool">
+      <label>Use a dynamic background for tooltips (uses more memory and CPU)</label>
+      <default>false</default>
+    </entry>
+    <entry name="tooltipFont" type="String">
+      <label>Font family for tooltips</label>
+      <default>Sans Serif</default>
+    </entry>
+    <entry name="tooltipColor" type="String">
+      <label>Text color for tooltips</label>
+      <default>#f1f1f1</default>
+    </entry>
+    <entry name="tooltipShadowColor" type="String">
+      <label>Shadow color for tooltips</label>
+      <default>#000000</default>
+    </entry>
+    <entry name="tooltipSize" type="Int">
+      <label>Font point size for tooltips</label>
+      <default>12</default>
+      <min>6</min>
+      <max>72</max>
+    </entry>
+    <entry name="tooltipShadowOffset" type="Int">
+      <label>Shadow offset for tooltips, in pixels</label>
+      <default>2</default>
+      <min>0</min>
+      <max>16</max>
+    </entry>
+    <entry name="tooltipBold" type="Bool">
+      <label>Whether the tooltip text is bold</label>
+      <default>false</default>
+    </entry>
+    <entry name="tooltipItalic" type="Bool">
+      <label>Whether the tooltip text is italic</label>
+      <default>false</default>
+    </entry>
+
+    <!-- Background -->
+    <entry name="solidBackground" type="Bool">
+      <label>Use a solid color background instead of a theme image</label>
+      <default>true</default>
+    </entry>
+    <entry name="backgroundColor" type="String">
+      <label>Color of the solid background</label>
+      <default>#1e1e2e</default>
+    </entry>
+    <entry name="backgroundOpacity" type="Int">
+      <label>Opacity of the background, in percent (0 = fully transparent, 100 = fully opaque)</label>
+      <default>70</default>
+      <min>0</min>
+      <max>100</max>
+    </entry>
+    <entry name="blurBackground" type="Bool">
+      <label>Apply a blur behind the dock background (requires compositor support)</label>
+      <default>true</default>
+    </entry>
+    <entry name="themeName" type="String">
+      <label>Name of the KPackage theme used for the background</label>
+      <default>default</default>
+    </entry>
+    <entry name="showBorders" type="Bool">
+      <label>Draw a border around the dock</label>
+      <default>false</default>
+    </entry>
+    <entry name="borderColor" type="String">
+      <label>Color of the dock border</label>
+      <default>#b1c4de</default>
+    </entry>
+    <entry name="separatorColor" type="String">
+      <label>Color of the separator between launchers and the taskbar</label>
+      <default>#ffffff</default>
+    </entry>
+
+    <!-- Taskbar -->
+    <entry name="showTaskbar" type="Bool">
+      <label>Show running windows in the dock</label>
+      <default>true</default>
+    </entry>
+    <entry name="minimizedOnly" type="Bool">
+      <label>Show only minimized windows in the taskbar</label>
+      <default>false</default>
+    </entry>
+    <entry name="currentDesktopOnly" type="Bool">
+      <label>Show only windows on the current virtual desktop</label>
+      <default>false</default>
+    </entry>
+    <entry name="showNotifications" type="Bool">
+      <label>Highlight a taskbar icon when its window changes while inactive</label>
+      <default>true</default>
+    </entry>
+    <entry name="showMinimizedShot" type="Bool">
+      <label>Use a screenshot of the window as the icon when minimized</label>
+      <default>false</default>
+    </entry>
+    <entry name="ignoreList" type="StringList">
+      <label>Window names that should never appear in the taskbar</label>
+      <default></default>
+    </entry>
+
+    <!-- Navigation / K-Menu -->
+    <entry name="showKMenu" type="Bool">
+      <label>Show the application launcher as the first dock item</label>
+      <default>false</default>
+    </entry>
+    <entry name="showNavigation" type="Bool">
+      <label>Show the navigation menu (desktop switcher, task list, clock) in the context menu</label>
+      <default>false</default>
+    </entry>
+  </group>
+</kcfg>
