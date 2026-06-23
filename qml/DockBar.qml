@@ -45,13 +45,8 @@ Item {
 
     clip: false
 
-    // Drag-and-drop state: which item is being dragged and its current
-    // position along the long axis. Used to reorder icons in real time as
-    // the dragged item passes over neighbours, and to detect drag-out for
-    // removal.
+    // Drag-and-drop state: which item is being dragged.
     property int dragIndex: -1
-    property real dragPos: 0
-    property bool dragOutside: false
 
     ListModel { id: listModel }
 
@@ -210,20 +205,21 @@ Item {
             // ends. The bar handles reordering (drag within the dock) and
             // removal (drag outside the dock) with the poof animation.
             onDragStarted: (idx) => {
+                removeTimer.stop()
+                removeTimer.idx = -1
                 bar.dragIndex = idx
-                bar.dragOutside = false
             }
-            onDragMoved: (pos) => {
-                bar.dragPos = pos
-                // Check if the drag has left the dock bounds.
+            onDragMoved: (_pos) => {}
+            onDragEnded: (idx, pos, outside) => {
+                if (bar.dragIndex < 0 || bar.dragIndex != idx) return
+                // Compute whether the drop is inside or outside from the
+                // final release position, not from the last onDragMoved
+                // (which can report wrong coordinates during animations).
                 const barPos = bar.mapToItem(null, 0, 0)
                 const barScenePos = vertical ? barPos.y : barPos.x
                 const barLen = vertical ? bar.height : bar.width
-                bar.dragOutside = (pos < barScenePos - 20) || (pos > barScenePos + barLen + 20)
-            }
-            onDragEnded: (idx, pos, outside) => {
-                if (bar.dragIndex < 0) return
-                if (bar.dragOutside) {
+                const isOutside = (pos < barScenePos - 20) || (pos > barScenePos + barLen + 20)
+                if (isOutside) {
                     // Dragged out of the dock: play poof, then remove.
                     delegateItem.playDestroyAnimation()
                     removeTimer.idx = bar.dragIndex
@@ -231,8 +227,6 @@ Item {
                 } else {
                     // Dropped inside: reorder — find the target position
                     // and tell the C++ model to move the launcher.
-                    const barPos = bar.mapToItem(null, 0, 0)
-                    const barScenePos = vertical ? barPos.y : barPos.x
                     const relPos = pos - barScenePos
                     // Find which icon slot the drop lands on.
                     let targetIdx = -1
@@ -248,7 +242,6 @@ Item {
                     }
                 }
                 bar.dragIndex = -1
-                bar.dragOutside = false
             }
         }
     }
@@ -280,7 +273,7 @@ Item {
                 for (let i = 0; i < urls.length; i++) {
                     const url = urls[i]
                     if (url.toString().endsWith(".desktop")) {
-                        const localFile = url.toLocalFile()
+                        const localFile = url.toString().replace("file://", "")
                         if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
                             bar.kooldock.model.addLauncher(localFile)
                     }
