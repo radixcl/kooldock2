@@ -91,10 +91,3 @@ behind the zoom/layout code.
 ## License
 
 GPL-2.0-or-later, per the SPDX headers in each source file.
-
-## Credits
-
-- Matias Fernandez (matias.fernandez@gmail.com) — KoolDock2 port
-- Francisco Guidi, Blase Stanek — original KoolDock authors/maintainers
-- Mauricio Bahamonde — original project webmaster
-- Sebastian Sariego Benitez — icon and artwork (original KoolDock)

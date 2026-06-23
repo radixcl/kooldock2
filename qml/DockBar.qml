@@ -60,33 +60,52 @@ Item {
         const margin = spacing * 2
         bar.containsMouse = localMouseX > -margin && localMouseX < bar.contentWidth + margin
 
-        // Step 1: sizes based on parabola centered at mouse. Gated by both
+        // Step 1: sizes from a parabola centered at the mouse, iterated a
+        // few times against the running center estimate. Gated by both
         // per-icon distance (dx < W) and containsMouse: icons within W of
         // the mouse jump straight to their zoomed size the instant the
         // cursor enters the dock's hover margin, rather than growing
         // gradually as it approaches — intentional, not a smooth fade-in.
+        //
+        // The iteration is what makes the biggest icon land *under* the
+        // cursor instead of one slot to the right. The Step 2 cumulative
+        // sum lays icons out left-to-right, so every leftward neighbour
+        // that also grew shoves the zoomed icon rightward of its rest slot;
+        // sizing off the *rest* slot (a single pass) makes the biggest icon
+        // end up just right of the cursor. Evaluating the parabola at each
+        // icon's *rendered* center (pass 2+) makes the icon that actually
+        // ends up under the cursor be the biggest — without shifting the
+        // row, which would un-center it from the background pill and break
+        // the edge-overflow guarantee (invariant #5). Converges in 2
+        // passes; 3 here for margin. localMouseX is read once above and
+        // held fixed across passes, so this stays clear of the bar-position
+        // feedback loop of invariants #1–2.
         const sizes = []
-        for (let i = 0; i < N; i++) {
-            const restCenter = spacing + iDist * i + smallSize / 2
-            const dx = localMouseX - restCenter
-            let sz = smallSize
-            if (containsMouse && Math.abs(dx) < W)
-                sz = Math.max(smallSize, bigSize - (dx * dx * H) / (W * W))
-            sizes.push(sz)
+        let centersEst = null
+        for (let it = 0; it < 3; it++) {
+            for (let i = 0; i < N; i++) {
+                const ci = centersEst ? centersEst[i]
+                                      : (spacing + iDist * i + smallSize / 2)
+                const dx = localMouseX - ci
+                let sz = smallSize
+                if (containsMouse && Math.abs(dx) < W)
+                    sz = Math.max(smallSize, bigSize - (dx * dx * H) / (W * W))
+                sizes[i] = sz
+            }
+            centersEst = [spacing + sizes[0] / 2]
+            for (let i = 1; i < N; i++)
+                centersEst.push(centersEst[i-1] + (sizes[i] + sizes[i-1]) / 2 + spacing)
         }
 
-        // Step 2: layout positions using original formula. The row is
-        // always centered within [0, contentWidth] by construction (icon 0
-        // starts at `spacing`, the last icon ends at `contentWidth - spacing`),
-        // so it stays centered relative to the background, which Main.qml
-        // sizes to match contentWidth, with no extra recentring needed here:
+        // Step 2: final layout positions from the converged sizes. The row
+        // is always centered within [0, contentWidth] by construction
+        // (icon 0 starts at `spacing`, the last icon ends at
+        // `contentWidth - spacing`), so it stays centered relative to the
+        // background, which Main.qml sizes to match contentWidth, with no
+        // extra recentring needed here:
         // cur_cx[0] = spacing + size[0]/2
         // cur_cx[i] = cur_cx[i-1] + (size[i] + size[i-1])/2 + spacing
-        const centers = []
-        centers.push(spacing + sizes[0] / 2)
-        for (let i = 1; i < N; i++) {
-            centers.push(centers[i-1] + (sizes[i] + sizes[i-1]) / 2 + spacing)
-        }
+        const centers = centersEst
 
         // Total span of the row at its current (possibly zoomed) sizes,
         // including the leading/trailing spacing — used by Main.qml to grow

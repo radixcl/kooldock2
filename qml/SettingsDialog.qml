@@ -6,9 +6,11 @@ import QtQuick.Window
 Item {
     id: root
 
-    property var settings: null
-    property var kooldock: null
-
+    // `settings` and `kooldock` are injected as context properties by
+    // KoolDock::showPreferences() (kooldock.cpp). Do NOT redeclare them
+    // here: a local `property var` of the same name would shadow the
+    // context property in QML's scope chain, leaving it null and silently
+    // breaking every read/write (the bug that made Apply/OK do nothing).
     implicitWidth: 520
     implicitHeight: 440
 

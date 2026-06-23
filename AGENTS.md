@@ -74,31 +74,52 @@ below were only caught this way.
    after being "fixed" into a smooth fade-in) — don't change it without
    checking first.
 
-4. **Known, accepted tradeoff: the zoomed icon isn't always exactly under
-   the cursor.** Because `centers[i] = centers[i-1] + (size[i]+size[i-1])/2
-   + spacing` is a left-to-right cumulative sum, the rendered position of
-   the icon under the mouse can drift by however much its earlier
-   (leftward) neighbours also grew — the visually-biggest icon can end up
-   one slot to the right of the actual cursor position. Two corrective
-   approaches were tried and both were reverted:
+4. **The biggest icon must land under the cursor; this is fixed by
+   iterating the size parabola, not by shifting.** The layout's
+   `centers[i] = centers[i-1] + (size[i]+size[i-1])/2 + spacing` is a
+   left-to-right cumulative sum, so every leftward neighbour that also
+   grows shoves the zoomed icon rightward of its rest slot. If sizes are
+   computed from the *rest* positions (a single pass), the visually-biggest
+   icon ends up one slot to the right of the cursor — a subtle but real
+   drift (~80px at default settings) that was noticed and reported.
+
+   `DockBar.layout()` fixes this by **iterating the size computation
+   against the running center estimate** (3 passes): pass 1 sizes off the
+   rest positions (identical to the old single pass); pass 2+ re-sizes off
+   each icon's *rendered* center from the previous pass. At convergence the
+   icon that actually ends up under the cursor is the biggest. This needs
+   **no positional shift**, so invariant #5 (no pill overflow) and #1–2
+   (no bar-position feedback) both still hold — `localMouseX` is read once
+   and held fixed across the passes, and `contentWidth` is still just the
+   un-shifted cumulative-sum span (in fact slightly smaller than the
+   single-pass value, since re-centering reduces the asymmetry). Converges
+   in 2 passes; 3 is used for margin. Verified by a Node.js geometry sim
+   across edge cases (first/last/middle/between icons) and multi-frame
+   stability.
+
+   Two earlier corrective approaches were tried and **reverted** — don't
+   reintroduce either:
    - Shifting only the icons' positions → un-centers the icon group from
-     the background pill on hover.
+     the background pill on hover and overflows the pill's rounded edge
+     (breaks #5).
    - Shifting the bar and the background pill together, as one rigid unit
      (`anchors.horizontalCenterOffset`) → fixed centering *and* the
-     edge-overflow case below, but was rejected end-to-end by the user for
-     reasons not fully diagnosed.
+     edge-overflow case, but was rejected end-to-end by the user.
 
-   Current state applies **no** corrective shift — the drift is accepted.
-   Don't reintroduce either approach without re-confirming the desired
-   behavior first, and re-verify stability per invariants #1–2 if you do.
+   Don't collapse the iteration back to a single pass — that reintroduces
+   the drift. Don't add a shift-based recentre either. If you touch the
+   size/center math, re-run the geometry sim first (the bug is easy to miss
+   by inspection: the size delta is only ~8px, the positional drift is the
+   visible symptom).
 
 5. **Icons can't overflow the background pill horizontally, by
    construction.** The cumulative sum starts icon 0 at exactly `spacing`
    and ends the last icon at exactly `contentWidth - spacing`, regardless of
-   any icon's size. This only holds as long as nothing shifts the *local*
-   layout (see #4) — if a corrective shift is reintroduced at the icon
-   level, this guarantee breaks and icons hovered at the very first/last
-   position can render outside the pill's rounded edge.
+   any icon's size. This holds because the layout uses **no positional
+   shift** (see #4: the drift is fixed by iterating sizes, not by shifting
+   positions) — if a corrective shift is reintroduced at the icon level,
+   this guarantee breaks and icons hovered at the very first/last position
+   can render outside the pill's rounded edge.
 
 6. **`SizeRootObjectToView` vs `SizeViewToRootObject`.** The main dock view
    (`KoolDock::setupView()`) uses `SizeRootObjectToView`: the *window* size
