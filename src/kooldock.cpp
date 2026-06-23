@@ -68,6 +68,9 @@ KoolDock::KoolDock(QObject *parent)
     connect(m_tasks, &WindowTasks::activeWindowChanged, m_model, &DockModel::onActiveWindowChanged);
     connect(m_tasks, &WindowTasks::availabilityChanged, m_model, &DockModel::reload);
 
+    m_hideTimer.setSingleShot(true);
+    connect(&m_hideTimer, &QTimer::timeout, this, &KoolDock::onHideTimer);
+
     m_tasks->start();
 
     setupView();
@@ -126,10 +129,18 @@ void KoolDock::setupView()
 
     applyLayerShell();
     applyGeometry();
-    applyBlur();
+    // Skip blur on startup when auto-hiding: the window starts hidden (a
+    // 2px strip), so a blur region would show a blurred rectangle at the
+    // edge with no visible pill. Blur is enabled by setContainsMouse()
+    // when the dock expands.
+    if (!autoHide()) {
+        applyBlur();
+    }
 
     m_view->show();
-    QTimer::singleShot(100, this, [this]() { applyBlur(); });
+    if (!autoHide()) {
+        QTimer::singleShot(100, this, [this]() { applyBlur(); });
+    }
 }
 
 void KoolDock::applyLayerShell()
@@ -157,7 +168,18 @@ void KoolDock::applyLayerShell()
     m_layer->setScope(QStringLiteral("kooldock2"));
 
     const int bgHeight = 60;
-    m_layer->setDesiredSize(QSize(maxDockWidth(), maxDockHeight()));
+    // When auto-hide is on, start hidden: a 2px trigger strip at the edge,
+    // no exclusive zone (overlay on top of other windows, macOS-style).
+    // setContainsMouse() expands the window to full size when the cursor
+    // enters the strip.
+    const int trigger = 2;
+    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+    const QSize visibleSize(maxDockWidth(), maxDockHeight());
+    const QSize hiddenSize(vert ? trigger : maxDockWidth(),
+                           vert ? maxDockHeight() : trigger);
+    const QSize initialSize = autoHide() ? hiddenSize : visibleSize;
+    m_layer->setDesiredSize(initialSize);
+    if (m_view) m_view->resize(initialSize);
     m_layer->setExclusiveZone(autoHide() ? 0 : bgHeight);
     m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
     if (!autoHide()) {
@@ -183,8 +205,12 @@ void KoolDock::applyGeometry()
     }
 }
 
-int KoolDock::maxDockWidth() const
+int KoolDock::maxDockLongSize() const
 {
+    // The dock's size along its long axis (the direction icons lay out
+    // and zoom along). Mirrors DockBar.qml's layout() worst case: rest
+    // span plus the parabola bump for the cursor parked on one icon and
+    // every neighbour still inside the falloff radius.
     const int count = m_model ? m_model->count() : 0;
     if (count <= 0) {
         return 64;
@@ -199,9 +225,6 @@ int KoolDock::maxDockWidth() const
     const int W = iDist * zoomRange / 2;
     const int H = bigIconSize - smallIconSize;
 
-    // Worst case: the cursor parked exactly on one icon, summing the
-    // parabola bump for that icon and every neighbour still inside the
-    // falloff radius (mirrors DockBar.qml's layout() math).
     int extraWidth = 0;
     for (int dx = 0; dx < W; dx += iDist) {
         const int bump = qMax(0, bigIconSize - (dx * dx * H) / (W * W) - smallIconSize);
@@ -212,51 +235,74 @@ int KoolDock::maxDockWidth() const
     return restWidth + extraWidth + iconSpacing * 2;
 }
 
-int KoolDock::maxDockHeight() const
+int KoolDock::maxDockShortSize() const
 {
-    // The visible pill (Main.qml's bg) is always exactly bgHeight tall and
-    // sits against the screen edge (bottom on BottomEdge, top on TopEdge);
-    // icons grow away from that edge into the reserved space on the opposite
-    // side. So the window needs enough room on that side to fit the tallest
-    // possible icon plus its margin (matches Main.qml's iconSpacing-based
-    // margin on DockBar) — independent of bgHeight and the same for both
-    // horizontal edges.
+    // The dock's size along its short axis: the pill's fixed bgHeight
+    // band, plus enough room on the overflow side to fit the tallest
+    // possible icon plus its margin. Same for all four edges.
     const int bgHeight = 60;
     const int needed = KoolDockSettings::iconSpacing() + KoolDockSettings::bigIconSize() + 4;
     return qMax(bgHeight, needed);
+}
+
+int KoolDock::maxDockWidth() const
+{
+    // Window width = long axis on horizontal edges, short axis on vertical.
+    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+    return vert ? maxDockShortSize() : maxDockLongSize();
+}
+
+int KoolDock::maxDockHeight() const
+{
+    // Window height = short axis on horizontal edges, long axis on vertical.
+    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+    return vert ? maxDockLongSize() : maxDockShortSize();
 }
 
 void KoolDock::applyBlur()
 {
     if (!m_view) return;
     if (KoolDockSettings::blurBackground()) {
-        // Blur only the background pill's actual current bounds (the 60px
-        // band at the screen-edge side of the window), kept in sync with
-        // the QML side via updateBlurRegion() as it resizes with the zoom —
-        // not the wider reserved overflow area, which must stay transparent
-        // just like the space on the opposite side of the bar. On
-        // BottomEdge the pill sits at the window's bottom (y = h - bgHeight);
-        // on TopEdge it sits at the top (y = 0). The region is rounded to
-        // match the pill's radius; a plain rectangular region would blur the
-        // four corners that the rounded rectangle actually leaves
-        // transparent, showing a blurred square peeking out from behind the
-        // rounded glass shape.
-        const qreal x = qMax<qreal>(0, m_blurX);
-        const qreal width = m_blurWidth > 0 ? m_blurWidth : m_view->width();
+        // Blur only the background pill's actual current bounds, kept in
+        // sync with the QML side via updateBlurRegion() as it resizes with
+        // the zoom — not the wider reserved overflow area, which must stay
+        // transparent. QML reports the pill's position and length along
+        // the dock's long axis (pos/length) plus the short-axis offset
+        // (shortOffset — the slide transform's displacement during the
+        // auto-hide animation); we reconstruct the full rect from the edge
+        // orientation. On horizontal edges the long axis is x and the
+        // short axis (bgHeight) is y; on vertical edges they swap. The
+        // region is rounded to match the pill's radius; a plain rectangular
+        // region would blur the four corners that the rounded rectangle
+        // leaves transparent. Don't clamp pos to 0: during the auto-hide
+        // slide the pill (and its blur) move off-screen, and clamping would
+        // keep a blurred rectangle pinned at the edge.
+        const qreal pos = m_blurPos;
+        const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
+        const qreal shortOffset = m_blurShortOffset;
         const int bgHeight = 60;
-        const qreal y = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
+        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+        QRectF rect;
+        if (vert) {
+            const qreal baseX = (screenEdge() == Qt::RightEdge) ? (m_view->width() - bgHeight) : 0;
+            rect = QRectF(baseX + shortOffset, pos, bgHeight, length);
+        } else {
+            const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
+            rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
+        }
         QPainterPath path;
-        path.addRoundedRect(QRectF(x, y, width, bgHeight), m_blurRadius, m_blurRadius);
+        path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
         KWindowEffects::enableBlurBehind(m_view, true, QRegion(path.toFillPolygon().toPolygon()));
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);
     }
 }
 
-void KoolDock::updateBlurRegion(qreal x, qreal width, qreal radius)
+void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius)
 {
-    m_blurX = x;
-    m_blurWidth = width;
+    m_blurPos = longPos;
+    m_blurLength = longLength;
+    m_blurShortOffset = shortOffset;
     m_blurRadius = radius;
     applyBlur();
 }
@@ -336,12 +382,52 @@ void KoolDock::setContainsMouse(bool contains)
         return;
     }
     m_containsMouse = contains;
+    // macOS-style auto-hide: the dock overlays on top of other windows
+    // (exclusive zone stays 0 — never pushes them) and slides in/out from
+    // the screen edge with a fade. The window starts (and ends) hidden as
+    // a 2px trigger strip at the edge so nothing visible blocks input or
+    // shows through; when the cursor bumps the edge, the window expands
+    // to full size immediately and the QML pill animates in (slide +
+    // fade). When the cursor leaves, the QML pill animates out, and after
+    // the animation finishes this timer shrinks the window back to the
+    // trigger strip and disables blur — so the pill is never clipped
+    // mid-animation by the window shrinking underneath it.
     if (m_layer && KoolDockSettings::autoHide()) {
         if (contains) {
-            m_layer->setExclusiveZone(60);
+            // Show: cancel any pending hide, expand to full size. Don't call
+            // applyBlur() here — it would use the stale blur pos from the
+            // hidden state. QML's updateBlur() fires immediately when the
+            // window resizes (and on every frame of the slide animation via
+            // the Translate's onXChanged/onYChanged), passing the correct
+            // transform-aware position to applyBlur() via updateBlurRegion().
+            m_hideTimer.stop();
+            m_layer->setDesiredSize(QSize(maxDockWidth(), maxDockHeight()));
+            if (m_view) m_view->resize(QSize(maxDockWidth(), maxDockHeight()));
         } else {
-            m_layer->setExclusiveZone(0);
+            // Hide: start the timer — the QML animation plays during this
+            // delay (with the blur following the pill via updateBlur()),
+            // then onHideTimer() shrinks the window and disables blur.
+            m_hideTimer.start(200);
         }
     }
     Q_EMIT containsMouseChanged();
+}
+
+void KoolDock::onHideTimer()
+{
+    if (!m_layer || !KoolDockSettings::autoHide() || m_containsMouse) {
+        return;
+    }
+    // Shrink to a 2px trigger strip along the screen edge. The compositor
+    // clips the surface to this size, so neither the pill (already at
+    // opacity 0 from the QML animation) nor any blur is visible, and the
+    // thin strip is the only thing blocking input — just enough to detect
+    // the cursor bumping the edge.
+    const int trigger = 2;
+    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+    QSize hidden(vert ? trigger : maxDockWidth(),
+                 vert ? maxDockHeight() : trigger);
+    m_layer->setDesiredSize(hidden);
+    if (m_view) m_view->resize(hidden);
+    KWindowEffects::enableBlurBehind(m_view, false);
 }

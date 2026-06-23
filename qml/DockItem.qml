@@ -10,7 +10,7 @@ Item {
     property var windowId: 0
     property int modelIndex: -1
     property real itemSize: 48
-    property real itemX: 0
+    property real itemPos: 0
     property int edge: Qt.BottomEdge
     property bool containsMouse: false
     // The biggest itemSize this icon will ever be asked to render at
@@ -28,11 +28,13 @@ Item {
     width:  itemSize
     height: itemSize
 
-    x: vertical ? (parent.width - itemSize) : itemX
-    // On BottomEdge the icon sits at the bottom of the bar and grows
-    // upward; on TopEdge it sits at the top and grows downward — so the
-    // zoom overflow extends away from the screen edge in both cases.
-    y: vertical ? itemX : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))
+    // Position along the dock's long axis (itemPos) and short axis (edge
+    // side). On BottomEdge icons sit at the bottom and grow upward; on
+    // TopEdge at the top growing downward; on LeftEdge at the left growing
+    // rightward; on RightEdge at the right growing leftward — the zoom
+    // overflow always extends away from the screen edge.
+    x: vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos
+    y: vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))
 
     Behavior on width  { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
     Behavior on height { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
@@ -71,11 +73,13 @@ Item {
     }
 
     Rectangle {
-        // Position with y instead of dynamic anchors (see Main.qml's bg
-        // for why): TopEdge puts the dot at the top of the icon, BottomEdge
-        // at the bottom.
-        y: edge === Qt.TopEdge ? 2 : (parent.height - height - 2)
-        anchors.horizontalCenter: parent.horizontalCenter
+        // Task indicator dot: sits on the edge side of the icon, centered
+        // along the long axis. Positioned with x/y (no dynamic anchors —
+        // see Main.qml's bg for why).
+        x: vertical ? (edge === Qt.LeftEdge ? 2 : (parent.width - width - 2))
+                    : (parent.width - width) / 2
+        y: vertical ? (parent.height - height) / 2
+                    : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
         width: 4; height: 4; radius: 2
         color: "#aaffffff"; visible: isTask; opacity: 0.6
     }

@@ -48,24 +48,30 @@ below were only caught this way.
 ## Critical invariants
 
 1. **Hover position is read from `root` (`Main.qml`), never from the bar
-   itself.** `DockBar`'s own on-screen position is *derived from*
-   `contentWidth`, which depends on icon sizes, which depend on the mouse
-   position. Reading the mouse relative to the bar's (or the background
-   pill's) *live* position creates a feedback loop: moving the bar changes
-   the local mouse coordinate, which changes the computed sizes/layout,
-   which moves the bar again. This was tried and produced a measured,
-   non-converging oscillation. `DockBar` must only ever receive stable
-   inputs: `windowWidth` (the real window width — never affected by
-   anything `DockBar` computes) and `globalMouseX` (position relative to
+   itself.** `DockBar`'s own on-screen position along the dock's long axis
+   is *derived from* `contentLength`, which depends on icon sizes, which
+   depend on the mouse position. Reading the mouse relative to the bar's
+   (or the background pill's) *live* position creates a feedback loop:
+   moving the bar changes the local mouse coordinate, which changes the
+   computed sizes/layout, which moves the bar again. This was tried and
+   produced a measured, non-converging oscillation. `DockBar` must only
+   ever receive stable inputs: `windowExtent` (the window's real size
+   along the long axis — width for Top/BottomEdge, height for
+   Left/RightEdge, never affected by anything `DockBar` computes) and
+   `globalMousePos` (cursor position along that same axis, relative to
    `root`, which never moves).
 
-2. **`contentWidth` must stay translation-invariant.** It's computed from
-   the un-shifted cumulative-sum layout in `DockBar.layout()`. Don't fold
-   any recentring/offset logic into it: `Main.qml` uses it to size the
-   background pill, and `layout()` itself uses *last frame's* value to
-   project the mouse into the bar's local coordinate frame. If it depended
-   on something derived from the projected mouse position, that's the same
-   feedback loop as #1, one step removed.
+2. **`contentLength` must stay translation-invariant.** It's computed
+   from the un-shifted cumulative-sum layout in `DockBar.layout()`. Don't
+   fold any recentring/offset logic into it: `Main.qml` uses it to size
+   the background pill along the long axis, and `layout()` itself uses
+   *last frame's* value to project the mouse into the bar's local
+   coordinate frame. If it depended on something derived from the
+   projected mouse position, that's the same feedback loop as #1, one
+   step removed. The 1D math is axis-neutral (verified by a Node.js
+   geometry sim): horizontal and vertical edges feed the same function
+   with different window dimensions / mouse coordinates and produce
+   identical size/center sequences.
 
 3. **The size parabola is gated by `containsMouse`, not just per-icon
    distance.** Icons jump straight to their zoomed size the instant the
@@ -112,14 +118,17 @@ below were only caught this way.
    by inspection: the size delta is only ~8px, the positional drift is the
    visible symptom).
 
-5. **Icons can't overflow the background pill horizontally, by
+5. **Icons can't overflow the background pill along the long axis, by
    construction.** The cumulative sum starts icon 0 at exactly `spacing`
-   and ends the last icon at exactly `contentWidth - spacing`, regardless of
-   any icon's size. This holds because the layout uses **no positional
+   and ends the last icon at exactly `contentLength - spacing`, regardless
+   of any icon's size. This holds because the layout uses **no positional
    shift** (see #4: the drift is fixed by iterating sizes, not by shifting
    positions) — if a corrective shift is reintroduced at the icon level,
    this guarantee breaks and icons hovered at the very first/last position
-   can render outside the pill's rounded edge.
+   can render outside the pill's rounded edge. On the short axis, icons
+   grow away from the screen edge into the reserved overflow space (which
+   stays transparent); the pill itself is always exactly `bgHeight` wide
+   on that axis.
 
 6. **`SizeRootObjectToView` vs `SizeViewToRootObject`.** The main dock view
    (`KoolDock::setupView()`) uses `SizeRootObjectToView`: the *window* size
@@ -178,9 +187,11 @@ global `settings` context property → `Main.qml` (`smallSize`, `bigSize`,
 properties to `DockBar`/`DockItem`. Leaf components don't read `settings`
 directly. Follow this same chain for new geometry settings.
 
-`KoolDock::maxDockWidth()`/`maxDockHeight()` (`kooldock.cpp`) mirror the
-*same* formulas used in `DockBar.qml`'s `layout()`, to reserve enough window
-space for the largest possible zoomed icon. If you change the zoom or
+`KoolDock::maxDockLongSize()`/`maxDockShortSize()` (`kooldock.cpp`) mirror
+the *same* formulas used in `DockBar.qml`'s `layout()`, to reserve enough
+window space for the largest possible zoomed icon. `maxDockWidth()` and
+`maxDockHeight()` swap these per orientation (long axis = width on
+horizontal edges, height on vertical edges). If you change the zoom or
 spacing math on the QML side, update both — this exact mismatch once
 shipped and clipped the tops of fully-zoomed icons.
 

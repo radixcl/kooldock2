@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QQuickView>
+#include <QTimer>
 
 #include <KSharedConfig>
 
@@ -46,7 +47,7 @@ public:
 
 public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
-    Q_INVOKABLE void updateBlurRegion(qreal x, qreal width, qreal radius);
+    Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
     void reload();
     void showPreferences();
     void quit();
@@ -61,6 +62,7 @@ Q_SIGNALS:
 
 private Q_SLOTS:
     void onScreenChanged(QScreen *screen);
+    void onHideTimer();
 
 private:
     void setupView();
@@ -70,6 +72,8 @@ private:
     void reconfigure();
     int maxDockWidth() const;
     int maxDockHeight() const;
+    int maxDockLongSize() const;
+    int maxDockShortSize() const;
 
     QPointer<QQuickView> m_view;
     LayerShellQt::Window *m_layer = nullptr;
@@ -78,9 +82,11 @@ private:
     WindowActions *m_windowActions;
     KSharedConfig::Ptr m_config;
     bool m_containsMouse = false;
-    qreal m_blurX = 0;
-    qreal m_blurWidth = 0;
+    qreal m_blurPos = 0;
+    qreal m_blurLength = 0;
+    qreal m_blurShortOffset = 0;
     qreal m_blurRadius = 0;
+    QTimer m_hideTimer;
 };
 
 #endif

@@ -18,15 +18,18 @@ Item {
     readonly property int zoomDuration: settings ? settings.zoomSpeed : 200
     readonly property int count: kooldock && kooldock.model ? kooldock.model.count : 0
 
-    // Total width at rest + extra for zoom expansion
-    readonly property int contentWidth: count > 0 ? (spacing + count * (smallSize + spacing)) : 500
-    readonly property int dockWidth: Math.max(contentWidth + 32, 64)
+    // Dock geometry along its long and short axes. The long axis is the one
+    // icons lay out on (horizontal for Top/BottomEdge, vertical for
+    // Left/RightEdge); the short axis is the pill's fixed bgHeight band.
+    readonly property int longContentLength: count > 0 ? (spacing + count * (smallSize + spacing)) : 500
+    readonly property int longSize: Math.max(longContentLength + 32, 64)
     readonly property int bgHeight: 60
-    // Matches KoolDock::maxDockHeight() in kooldock.cpp, which actually
-    // drives the window size (this view uses SizeRootObjectToView, so
-    // implicitHeight itself has no effect) — kept in sync just so this
-    // doesn't silently lie if anyone reads it.
-    readonly property int dockHeight: Math.max(bgHeight, spacing + bigSize + 4)
+    readonly property int shortSize: Math.max(bgHeight, spacing + bigSize + 4)
+    // Window dimensions swap with orientation: horizontal edges get a wide
+    // short window; vertical edges get a narrow tall one. Mirrors
+    // KoolDock::maxDockWidth()/maxDockHeight() in kooldock.cpp.
+    readonly property int dockWidth: vertical ? shortSize : longSize
+    readonly property int dockHeight: vertical ? longSize : shortSize
 
     implicitWidth:  dockWidth
     implicitHeight: dockHeight
@@ -42,24 +45,27 @@ Item {
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
 
     // macOS glass background — transparent, blur via KWindowEffects.
-    // Width hugs the icons' current (possibly zoomed) total span and stays
-    // horizontally centered, so the pill grows/shrinks with the zoom while
-    // the icons (always centered within it, see DockBar.qml) never drift.
-    // On BottomEdge the pill sits at the window's bottom and icons grow
-    // upward into the reserved space above it; on TopEdge the pill sits at
-    // the window's top and icons grow downward into the reserved space
-    // below it — same dockHeight, opposite side.
+    // The pill hugs the icons' current (possibly zoomed) total span along
+    // the dock's long axis and stays centered along that axis, so it
+    // grows/shrinks with the zoom while the icons (always centered within
+    // it, see DockBar.qml) never drift. On horizontal edges the pill sits
+    // at the window's top or bottom and icons grow away from that edge; on
+    // vertical edges the pill sits at the window's left or right and icons
+    // grow away similarly. All positioning uses explicit x/y (no dynamic
+    // anchors): switching anchors at runtime can leave both set for a
+    // frame and stretch the Rectangle over the overflow area.
     Rectangle {
         id: bg
-        anchors.horizontalCenter: parent.horizontalCenter
-        // Position vertically with y instead of anchors.top/bottom:
-        // switching anchors dynamically (top ? parent.top : undefined)
-        // can leave both vertical anchors set for a frame when the edge
-        // changes at runtime, which stretches the Rectangle to fill the
-        // whole window and spills its color/blur into the overflow area.
-        y: edge === Qt.TopEdge ? 0 : (parent.height - height)
-        width: Math.max(dockBar.contentWidth + root.spacing * 2, 64)
-        height: bgHeight
+        // Long-axis dimension (tracks the zoomed icon span); short-axis
+        // dimension is fixed at bgHeight.
+        width:  vertical ? bgHeight : Math.max(dockBar.contentLength + root.spacing * 2, 64)
+        height: vertical ? Math.max(dockBar.contentLength + root.spacing * 2, 64) : bgHeight
+        // Position: centered along the long axis, flush to the screen edge
+        // on the short axis.
+        x: vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - width))
+                    : (parent.width - width) / 2
+        y: vertical ? (parent.height - height) / 2
+                    : (edge === Qt.TopEdge ? 0 : (parent.height - height))
         radius: 18
         color: "#1affffff"
         border.color: "#33ffffff"
@@ -67,30 +73,70 @@ Item {
         clip: false
 
         opacity: autoHide ? (containsMouse ? 1.0 : 0.0) : 1.0
-        scale: autoHide ? (containsMouse ? 1.0 : 0.7) : 1.0
-        transformOrigin: edge === Qt.TopEdge ? Item.Top : Item.Bottom
+        // macOS-style slide: the pill translates off the screen edge when
+        // hidden and slides back in when shown. Combined with the opacity
+        // fade above, this gives the smooth "grow from the edge" feel.
+        // transformOrigin stays anchored to the edge for the subtle scale.
+        scale: autoHide ? (containsMouse ? 1.0 : 0.85) : 1.0
+        transformOrigin: edge === Qt.TopEdge ? Item.Top
+                         : edge === Qt.BottomEdge ? Item.Bottom
+                         : edge === Qt.LeftEdge ? Item.Left
+                         : Item.Right
+        transform: Translate {
+            id: slideTransform
+            x: autoHide && !containsMouse
+               ? (edge === Qt.LeftEdge ? -bg.width : edge === Qt.RightEdge ? bg.width : 0)
+               : 0
+            y: autoHide && !containsMouse
+               ? (edge === Qt.TopEdge ? -bg.height : edge === Qt.BottomEdge ? bg.height : 0)
+               : 0
+            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            // Update the blur region every frame as the pill slides, so the
+            // blur stays aligned with the visible pill and never shows a
+            // static blurred rectangle before/after the animation.
+            onXChanged: bg.updateBlur()
+            onYChanged: bg.updateBlur()
+        }
 
         Behavior on width   { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
-        Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-        Behavior on scale   { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        Behavior on height  { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
+        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        Behavior on scale   { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         // Keep the desktop blur region matched to the pill's actual current
         // bounds — including its rounded corners — so neither the side dead
-        // space (reserved for zoom growth, like the space above the bar) nor
-        // the area just outside the rounded corners is ever blurred.
-        onXChanged: if (kooldock) kooldock.updateBlurRegion(x, width, radius)
-        onWidthChanged: if (kooldock) kooldock.updateBlurRegion(x, width, radius)
+        // space (reserved for zoom growth) nor the area just outside the
+        // rounded corners is ever blurred. Pass the long-axis position and
+        // length, plus the short-axis slide offset, so the blur follows the
+        // pill during the auto-hide animation (otherwise a static blurred
+        // rectangle is visible before the pill arrives and after it leaves).
+        function updateBlur() {
+            if (!kooldock) return
+            const longPos = vertical ? (bg.y + slideTransform.y) : (bg.x + slideTransform.x)
+            const length = vertical ? bg.height : bg.width
+            // The slide happens along the short axis (perpendicular to the
+            // edge), so pass that offset separately — C++ adds it to its
+            // computed short-axis base position.
+            const shortOffset = vertical ? slideTransform.x : slideTransform.y
+            kooldock.updateBlurRegion(longPos, length, shortOffset, bg.radius)
+        }
+        onXChanged: updateBlur()
+        onYChanged: updateBlur()
+        onWidthChanged: updateBlur()
+        onHeightChanged: updateBlur()
 
         DockBar {
             id: dockBar
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.margins: root.spacing
-            // Same reasoning as bg above: avoid dynamic vertical anchors.
-            // BottomEdge: bar sits at the bottom of the pill (y = h - barH -
-            // margin). TopEdge: bar sits at the top (y = margin).
-            y: edge === Qt.TopEdge ? root.spacing : (parent.height - height - root.spacing)
-            height: bgHeight - root.spacing
+            // Fill the pill along its long axis (minus margins); sit at the
+            // edge side on the short axis. Explicit x/y/width/height (no
+            // dynamic anchors — same reasoning as bg above).
+            x: vertical ? (edge === Qt.LeftEdge ? root.spacing : (parent.width - width - root.spacing))
+                        : root.spacing
+            y: vertical ? root.spacing
+                        : (edge === Qt.TopEdge ? root.spacing : (parent.height - height - root.spacing))
+            width:  vertical ? (bgHeight - root.spacing) : (parent.width - 2 * root.spacing)
+            height: vertical ? (parent.height - 2 * root.spacing) : (bgHeight - root.spacing)
             clip: false
 
             kooldock: root.kooldock
@@ -101,13 +147,15 @@ Item {
             zoomRange: root.zoomRange
             spacing: root.spacing
             zoomDuration: root.zoomDuration
-            windowWidth: root.width
+            windowExtent: vertical ? root.height : root.width
             // Once the pointer leaves the window, point.position freezes at
             // its last value and never changes again, so nothing would
             // re-trigger layout() to notice the mouse is gone. Force a
             // clearly out-of-range value instead, so containsMouse properly
             // drops to false and the dock shrinks back.
-            globalMouseX: hoverHandler.hovered ? hoverHandler.point.position.x : -100000
+            globalMousePos: hoverHandler.hovered
+                            ? (vertical ? hoverHandler.point.position.y : hoverHandler.point.position.x)
+                            : -100000
         }
     }
 }

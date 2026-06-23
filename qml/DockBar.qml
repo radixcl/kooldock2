@@ -7,18 +7,20 @@ Item {
     property var kooldock: null
     property int edge: Qt.BottomEdge
     property bool autoHide: false
-    // Stable inputs from Main.qml: the window's actual width (set by the
-    // compositor/layer-shell, unrelated to anything we compute here) and the
-    // cursor's position in that same, never-moving frame. We deliberately do
-    // NOT use the bar's own live on-screen position to find the mouse: the
-    // bar stays centered at width/2 - contentWidth/2, i.e. its position is
-    // itself an output of this function, so using it as an input here would
-    // make the two chase each other.
-    property real windowWidth: 0
-    property real globalMouseX: 0
+    // Stable inputs from Main.qml: the window's extent along the dock's
+    // long axis (width for Top/BottomEdge, height for Left/RightEdge — set
+    // by the compositor/layer-shell, unrelated to anything we compute here)
+    // and the cursor's position along that same axis in the window's
+    // never-moving frame. We deliberately do NOT use the bar's own live
+    // on-screen position to find the mouse: the bar stays centered at
+    // extent/2 - contentLength/2, i.e. its position is itself an output of
+    // this function, so using it as an input here would make the two chase
+    // each other.
+    property real windowExtent: 0
+    property real globalMousePos: 0
 
     property bool containsMouse: false
-    property real contentWidth: 0
+    property real contentLength: 0
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     // Geometry, fed by Main.qml from settings — defaults here only matter
@@ -40,7 +42,7 @@ Item {
         for (let i = 0; i < m.count; i++) {
             const d = m.itemData(i)
             listModel.append({name: d.name, iconName: d.iconName, isTask: d.isTask,
-                             windowId: d.windowId, itemIndex: d.itemIndex, sz: smallSize, ix: 0})
+                             windowId: d.windowId, itemIndex: d.itemIndex, sz: smallSize, ipos: 0})
         }
         layout()
     }
@@ -52,13 +54,17 @@ Item {
         const H = bigSize - smallSize
         const iDist = smallSize + spacing
 
-        // Project the cursor onto the bar's [0, contentWidth] frame using
-        // *last* layout's contentWidth (read here, before it's overwritten
-        // below) — see the comment on windowWidth/globalMouseX above for why.
-        const barLeftEdge = windowWidth / 2 - bar.contentWidth / 2
-        const localMouseX = globalMouseX - barLeftEdge
+        // Project the cursor onto the bar's [0, contentLength] frame using
+        // *last* layout's contentLength (read here, before it's overwritten
+        // below) — see the comment on windowExtent/globalMousePos above for
+        // why. This is axis-neutral: for horizontal edges windowExtent is
+        // the window's width and globalMousePos is point.x; for vertical
+        // edges they're the window's height and point.y. The 1D math is
+        // identical either way (verified by a Node.js geometry sim).
+        const barNearEdge = windowExtent / 2 - bar.contentLength / 2
+        const localMousePos = globalMousePos - barNearEdge
         const margin = spacing * 2
-        bar.containsMouse = localMouseX > -margin && localMouseX < bar.contentWidth + margin
+        bar.containsMouse = localMousePos > -margin && localMousePos < bar.contentLength + margin
 
         // Step 1: sizes from a parabola centered at the mouse, iterated a
         // few times against the running center estimate. Gated by both
@@ -77,7 +83,7 @@ Item {
         // ends up under the cursor be the biggest — without shifting the
         // row, which would un-center it from the background pill and break
         // the edge-overflow guarantee (invariant #5). Converges in 2
-        // passes; 3 here for margin. localMouseX is read once above and
+        // passes; 3 here for margin. localMousePos is read once above and
         // held fixed across passes, so this stays clear of the bar-position
         // feedback loop of invariants #1–2.
         const sizes = []
@@ -86,7 +92,7 @@ Item {
             for (let i = 0; i < N; i++) {
                 const ci = centersEst ? centersEst[i]
                                       : (spacing + iDist * i + smallSize / 2)
-                const dx = localMouseX - ci
+                const dx = localMousePos - ci
                 let sz = smallSize
                 if (containsMouse && Math.abs(dx) < W)
                     sz = Math.max(smallSize, bigSize - (dx * dx * H) / (W * W))
@@ -98,10 +104,10 @@ Item {
         }
 
         // Step 2: final layout positions from the converged sizes. The row
-        // is always centered within [0, contentWidth] by construction
+        // is always centered within [0, contentLength] by construction
         // (icon 0 starts at `spacing`, the last icon ends at
-        // `contentWidth - spacing`), so it stays centered relative to the
-        // background, which Main.qml sizes to match contentWidth, with no
+        // `contentLength - spacing`), so it stays centered relative to the
+        // background, which Main.qml sizes to match contentLength, with no
         // extra recentring needed here:
         // cur_cx[0] = spacing + size[0]/2
         // cur_cx[i] = cur_cx[i-1] + (size[i] + size[i-1])/2 + spacing
@@ -110,12 +116,12 @@ Item {
         // Total span of the row at its current (possibly zoomed) sizes,
         // including the leading/trailing spacing — used by Main.qml to grow
         // the background pill to hug the icons, macOS-style.
-        bar.contentWidth = centers[N - 1] + sizes[N - 1] / 2 + spacing
+        bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
 
         for (let i = 0; i < N; i++) {
-            const x = centers[i] - sizes[i] / 2
+            const pos = centers[i] - sizes[i] / 2
             listModel.setProperty(i, "sz", sizes[i])
-            listModel.setProperty(i, "ix", x)
+            listModel.setProperty(i, "ipos", pos)
         }
     }
 
@@ -127,8 +133,8 @@ Item {
 
     Component.onCompleted: refreshItems()
     onKooldockChanged: refreshItems()
-    onGlobalMouseXChanged: layout()
-    onWindowWidthChanged: layout()
+    onGlobalMousePosChanged: layout()
+    onWindowExtentChanged: layout()
     // Geometry settings changed (Apply/OK in the preferences dialog) — sizes
     // feed into every icon's rest size in the model, so go through
     // refreshItems() rather than just layout().
@@ -146,7 +152,7 @@ Item {
             windowId: model.windowId
             modelIndex: model.itemIndex
             itemSize: model.sz
-            itemX: model.ix
+            itemPos: model.ipos
             edge: bar.edge
             containsMouse: bar.containsMouse
             maxIconSize: bar.bigSize
