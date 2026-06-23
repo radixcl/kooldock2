@@ -49,6 +49,34 @@ Item {
     // Drag-and-drop state: which item is being dragged.
     property int dragIndex: -1
 
+    // Threshold (px) past the bar's edge for a drag to count as "outside"
+    // the dock. Kept within the window's overflow area so removal triggers
+    // before the cursor leaves the Wayland surface (where DragHandler stops
+    // tracking it). On the short axis (perpendicular to the screen edge),
+    // the overflow area is ~bigIconSize+spacing tall, so 30px is well
+    // inside. On the long axis, 20px matches the previous behavior.
+    readonly property int dragOutsideMarginLong: 20
+    readonly property int dragOutsideMarginShort: 30
+
+    // Returns true if the given scene coordinates (longPos along the dock's
+    // long axis, crossPos along the short axis) are outside the bar's
+    // bounds expanded by the margins above. Checks BOTH axes — the old
+    // code only checked the long axis, so dragging an icon upward
+    // (perpendicular to a BottomEdge dock) never triggered removal.
+    function isOutsideDock(longPos, crossPos) {
+        const barPos = bar.mapToItem(null, 0, 0)
+        const barLong = vertical ? barPos.y : barPos.x
+        const barCross = vertical ? barPos.x : barPos.y
+        const barLen = vertical ? bar.height : bar.width
+        const barCrossLen = vertical ? bar.width : bar.height
+
+        const outsideLong = (longPos < barLong - dragOutsideMarginLong) ||
+                            (longPos > barLong + barLen + dragOutsideMarginLong)
+        const outsideCross = (crossPos < barCross - dragOutsideMarginShort) ||
+                             (crossPos > barCross + barCrossLen + dragOutsideMarginShort)
+        return outsideLong || outsideCross
+    }
+
     ListModel { id: listModel }
 
     function refreshItems() {
@@ -211,17 +239,20 @@ Item {
                 removeTimer.stop()
                 removeTimer.idx = -1
                 bar.dragIndex = idx
+                // Expand the window so the DragHandler keeps tracking the
+                // cursor as the icon moves outside the dock's visible area.
+                if (bar.kooldock) bar.kooldock.setDragExpanded(true)
             }
-            onDragMoved: (_pos) => {}
-            onDragEnded: (idx, pos, outside) => {
+            onDragMoved: (longPos, crossPos) => {
+                // Live feedback: tell the item whether it's in the
+                // removal zone so it can show the semi-transparent state.
+                delegateItem.willRemove = bar.isOutsideDock(longPos, crossPos)
+            }
+            onDragEnded: (idx, longPos, crossPos) => {
                 if (bar.dragIndex < 0 || bar.dragIndex != idx) return
-                // Compute whether the drop is inside or outside from the
-                // final release position, not from the last onDragMoved
-                // (which can report wrong coordinates during animations).
-                const barPos = bar.mapToItem(null, 0, 0)
-                const barScenePos = vertical ? barPos.y : barPos.x
-                const barLen = vertical ? bar.height : bar.width
-                const isOutside = (pos < barScenePos - 20) || (pos > barScenePos + barLen + 20)
+                // Restore the window size now that the drag is over.
+                if (bar.kooldock) bar.kooldock.setDragExpanded(false)
+                const isOutside = bar.isOutsideDock(longPos, crossPos)
                 if (isOutside) {
                     // Dragged out of the dock: play poof, then remove.
                     delegateItem.playDestroyAnimation()
@@ -230,7 +261,9 @@ Item {
                 } else {
                     // Dropped inside: reorder — find the target position
                     // and tell the C++ model to move the launcher.
-                    const relPos = pos - barScenePos
+                    const barPos = bar.mapToItem(null, 0, 0)
+                    const barScenePos = vertical ? barPos.y : barPos.x
+                    const relPos = longPos - barScenePos
                     // Find which icon slot the drop lands on.
                     let targetIdx = -1
                     for (let i = 0; i < listModel.count; i++) {

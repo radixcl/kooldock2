@@ -38,12 +38,16 @@ Item {
     property real dragOffsetX: 0
     property real dragOffsetY: 0
     property bool beingDestroyed: false
+    // Set by DockBar during dragMoved to indicate the icon is in the
+    // removal zone (far enough from the bar on either axis). Drives the
+    // semi-transparent visual feedback.
+    property bool willRemove: false
 
     signal activated()
     signal contextMenuRequested(var pt)
     signal dragStarted(int index)
-    signal dragMoved(real pos)
-    signal dragEnded(int index, real pos, bool outsideDock)
+    signal dragMoved(real longPos, real crossPos)
+    signal dragEnded(int index, real longPos, real crossPos)
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     readonly property real iconPad: iconPadding
@@ -77,6 +81,10 @@ Item {
     }
     scale: dragActive ? 1.3 : (beingDestroyed ? destroyScale.scale : 1.0)
     transformOrigin: Item.Center
+    // Visual feedback during drag: when in the removal zone, the icon
+    // becomes semi-transparent to indicate it will be removed on release.
+    opacity: (dragActive && willRemove) ? 0.4 : 1.0
+    Behavior on opacity { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
     // Click feedback bounce (macOS-style squash & pop). Implemented as a
     // transform so it composes with the `scale` property above (used for
@@ -145,11 +153,14 @@ Item {
                 item.dragActive = true
                 item.dragStarted(modelIndex)
             } else if (item.dragActive) {
-                const pos = vertical ? dragHandler.centroid.scenePosition.y : dragHandler.centroid.scenePosition.x
+                const scenePos = dragHandler.centroid.scenePosition
+                const longPos = vertical ? scenePos.y : scenePos.x
+                const crossPos = vertical ? scenePos.x : scenePos.y
                 item.dragActive = false
                 item.dragOffsetX = 0
                 item.dragOffsetY = 0
-                item.dragEnded(modelIndex, pos, false)
+                item.willRemove = false
+                item.dragEnded(modelIndex, longPos, crossPos)
             }
         }
 
@@ -163,8 +174,9 @@ Item {
                 const targetY = scenePos.y - parentPos.y - itemSize / 2
                 item.dragOffsetX = targetX - (vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos)
                 item.dragOffsetY = targetY - (vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize)))
-                const pos = vertical ? scenePos.y : scenePos.x
-                item.dragMoved(pos)
+                const longPos = vertical ? scenePos.y : scenePos.x
+                const crossPos = vertical ? scenePos.x : scenePos.y
+                item.dragMoved(longPos, crossPos)
             }
         }
     }

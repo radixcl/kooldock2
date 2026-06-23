@@ -50,6 +50,7 @@ public:
 public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
     Q_INVOKABLE void setDragActive(bool active);
+    Q_INVOKABLE void setDragExpanded(bool expanded);
     Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
     void reload();
     void showPreferences();
@@ -88,6 +89,7 @@ private:
     KSharedConfig::Ptr m_config;
     bool m_containsMouse = false;
     bool m_dragActive = false;
+    bool m_dragExpanded = false;
     qreal m_blurPos = 0;
     qreal m_blurLength = 0;
     qreal m_blurShortOffset = 0;

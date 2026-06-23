@@ -123,6 +123,19 @@ void KoolDock::setDragActive(bool active)
     Q_EMIT dragActiveChanged();
     setContainsMouse(active);
 }
+
+void KoolDock::setDragExpanded(bool expanded)
+{
+    if (m_dragExpanded == expanded) return;
+    m_dragExpanded = expanded;
+    // Re-apply the layer shell with the new (expanded or normal) size.
+    // The expansion grows the window along its short axis (perpendicular
+    // to the screen edge) so the cursor stays inside the Wayland surface
+    // while an icon is dragged outside the dock's visible area — without
+    // it, the DragHandler stops tracking at the surface edge and the icon
+    // appears "stuck" at the invisible window border.
+    applyLayerShell();
+}
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
 
 void KoolDock::setupView()
@@ -207,7 +220,22 @@ void KoolDock::applyLayerShell()
     // zone 0) so the dock doesn't reserve extra space on top of the
     // taskbar's — it just overlays at the offset position.
     const bool overlay = autoHide() || edgeMargin != 0;
-    const QSize size(maxDockWidth(), maxDockHeight());
+    QSize size(maxDockWidth(), maxDockHeight());
+    // During an internal icon drag, expand the window along its short
+    // axis so the DragHandler keeps tracking the cursor as the icon moves
+    // outside the dock's visible area. The layer surface is anchored to
+    // the screen edge, so growing the short axis extends the surface
+    // toward the screen center (away from the edge) — the extra area is
+    // transparent and doesn't affect the dock's visible position.
+    if (m_dragExpanded) {
+        constexpr int dragExpandShort = 300;
+        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+        if (vert) {
+            size.rwidth() += dragExpandShort;
+        } else {
+            size.rheight() += dragExpandShort;
+        }
+    }
     m_layer->setDesiredSize(size);
     if (m_view) m_view->resize(size);
     m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
