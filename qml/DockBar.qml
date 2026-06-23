@@ -261,12 +261,20 @@ Item {
 
     // DropArea: accept external .desktop file drops to add launchers.
     // This covers dragging a .desktop file from the file manager onto
-    // the dock.
+    // the dock. Also extends the auto-hide drag heartbeat so the dock
+    // stays visible when the drag moves from the window edge into the
+    // pill area (DropArea transfer).
     DropArea {
         anchors.fill: parent
         enabled: true
         keys: ["text/uri-list"]
 
+        onEntered: (drop) => {
+            if (bar.kooldock) bar.kooldock.setDragActive(true)
+        }
+        onPositionChanged: (drop) => {
+            if (bar.kooldock) bar.kooldock.setDragActive(true)
+        }
         onDropped: (drop) => {
             if (drop.hasUrls) {
                 const urls = drop.urls

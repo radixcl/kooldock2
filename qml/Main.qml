@@ -59,14 +59,14 @@ Item {
     // derived from its content width, so computing "mouse relative to the
     // bar's position" up here would make the two chase each other.
     HoverHandler { id: hoverHandler }
-    readonly property bool containsMouse: dockBar.containsMouse
+    readonly property bool containsMouse: dockBar.containsMouse || (kooldock ? kooldock.dragActive : false)
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
 
-    // When auto-hide is on and the dock is hidden (2px trigger strip),
+    // When auto-hide is on and the dock is hidden (trigger strip),
     // a drag-and-drop from another app (e.g. dragging a .desktop file
     // from Dolphin) doesn't generate hover events — Wayland drag
     // operations don't fire enter/leave like a normal cursor. This
-    // DropArea covers the full window (even at 2px) and expands the dock
+    // DropArea covers the full window and expands the dock
     // on drag-enter so the user can drop onto the now-visible dock. The
     // actual file drop is handled by DockBar's own DropArea.
     DropArea {
@@ -74,15 +74,15 @@ Item {
         enabled: autoHide
         keys: ["text/uri-list"]
         onEntered: (drop) => {
-            if (kooldock) kooldock.setContainsMouse(true)
+            if (kooldock) kooldock.setDragActive(true)
         }
         onPositionChanged: (drop) => {
-            // Keep the dock alive while the drag moves over it.
-            if (kooldock) kooldock.setContainsMouse(true)
+            // Keep the heartbeat alive while the drag moves.
+            if (kooldock) kooldock.setDragActive(true)
         }
         onDropped: (drop) => {
-            // Let DockBar's DropArea handle the actual drop — just keep
-            // the dock visible here. Don't accept so the event propagates.
+            // Let DockBar's DropArea handle the actual drop — propagate.
+            drop.accepted = false
         }
     }
 

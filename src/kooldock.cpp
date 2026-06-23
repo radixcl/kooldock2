@@ -71,6 +71,11 @@ KoolDock::KoolDock(QObject *parent)
     m_hideTimer.setSingleShot(true);
     connect(&m_hideTimer, &QTimer::timeout, this, &KoolDock::onHideTimer);
 
+    m_dragHeartbeat.setSingleShot(true);
+    connect(&m_dragHeartbeat, &QTimer::timeout, this, [this]() {
+        setDragActive(false);
+    });
+
     m_tasks->start();
 
     setupView();
@@ -105,6 +110,19 @@ Qt::Edge KoolDock::screenEdge() const
 
 bool KoolDock::autoHide() const { return KoolDockSettings::autoHide(); }
 bool KoolDock::containsMouse() const { return m_containsMouse; }
+bool KoolDock::dragActive() const { return m_dragActive; }
+
+void KoolDock::setDragActive(bool active)
+{
+    if (active) {
+        // Keep the heartbeat alive while drag events flow.
+        m_dragHeartbeat.start(500);
+    }
+    if (m_dragActive == active) return;
+    m_dragActive = active;
+    Q_EMIT dragActiveChanged();
+    setContainsMouse(active);
+}
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
 
 void KoolDock::setupView()
@@ -129,10 +147,10 @@ void KoolDock::setupView()
 
     applyLayerShell();
     applyGeometry();
-    // Skip blur on startup when auto-hiding: the window starts hidden (a
-    // 2px strip), so a blur region would show a blurred rectangle at the
-    // edge with no visible pill. Blur is enabled by setContainsMouse()
-    // when the dock expands.
+    // Skip blur on startup when auto-hiding: the window starts hidden
+    // (a narrow trigger strip), so a blur region would show a blurred
+    // rectangle at the edge with no visible pill. Blur is enabled by
+    // setContainsMouse() when the dock expands.
     if (!autoHide()) {
         applyBlur();
     }
@@ -182,22 +200,16 @@ void KoolDock::applyLayerShell()
     m_layer->setMargins(margins);
 
     const int bgHeight = KoolDockSettings::dockHeight();
-    // When auto-hide is on, start hidden: a 2px trigger strip at the edge,
-    // no exclusive zone (overlay on top of other windows, macOS-style).
-    // setContainsMouse() expands the window to full size when the cursor
-    // enters the strip. When an edge margin is set (non-zero), also use
-    // overlay mode (exclusive zone 0) so the dock doesn't reserve extra
-    // space on top of the taskbar's — it just overlays at the offset
-    // position.
+    // When auto-hide is on, the window stays at full size (so drag-drop
+    // from external apps can hit the surface) but we restrict pointer
+    // input to a narrow trigger strip via setMask / input region.
+    // With an edge margin set (non-zero), use overlay mode (exclusive
+    // zone 0) so the dock doesn't reserve extra space on top of the
+    // taskbar's — it just overlays at the offset position.
     const bool overlay = autoHide() || edgeMargin != 0;
-    const int trigger = 2;
-    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-    const QSize visibleSize(maxDockWidth(), maxDockHeight());
-    const QSize hiddenSize(vert ? trigger : maxDockWidth(),
-                           vert ? maxDockHeight() : trigger);
-    const QSize initialSize = autoHide() ? hiddenSize : visibleSize;
-    m_layer->setDesiredSize(initialSize);
-    if (m_view) m_view->resize(initialSize);
+    const QSize size(maxDockWidth(), maxDockHeight());
+    m_layer->setDesiredSize(size);
+    if (m_view) m_view->resize(size);
     m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
     m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
     if (!overlay) {
@@ -207,6 +219,10 @@ void KoolDock::applyLayerShell()
         case Qt::LeftEdge:   m_layer->setExclusiveEdge(L::AnchorLeft); break;
         case Qt::RightEdge:  m_layer->setExclusiveEdge(L::AnchorRight); break;
         }
+    }
+
+    if (autoHide()) {
+        applyInputMask(!m_containsMouse);
     }
 }
 
@@ -275,6 +291,35 @@ int KoolDock::maxDockHeight() const
     // Window height = short axis on horizontal edges, long axis on vertical.
     const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
     return vert ? maxDockLongSize() : maxDockShortSize();
+}
+
+static constexpr int TRIGGER_HEIGHT = 8;
+
+void KoolDock::applyInputMask(bool hidden)
+{
+    if (!m_view) return;
+    if (!hidden) {
+        // Full input: clear any mask so the entire surface receives
+        // pointer and touch events.
+        m_view->setMask(QRegion());
+        return;
+    }
+    // Restrict input to the trigger strip at the anchored edge.  On
+    // Wayland QWindow::setMask translates to wl_surface::set_input_region,
+    // which only affects pointer/touch hit-testing — the surface geometry
+    // (used for wl_data_device::enter during drag-and-drop) stays at the
+    // full window size, so drags from external apps can still wake the
+    // dock.
+    const int w = m_view->width();
+    const int h = m_view->height();
+    QRect strip;
+    switch (screenEdge()) {
+    case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
+    case Qt::TopEdge:    strip = QRect(0, 0, w, TRIGGER_HEIGHT); break;
+    case Qt::LeftEdge:   strip = QRect(0, 0, TRIGGER_HEIGHT, h); break;
+    case Qt::RightEdge:  strip = QRect(w - TRIGGER_HEIGHT, 0, TRIGGER_HEIGHT, h); break;
+    }
+    m_view->setMask(QRegion(strip));
 }
 
 void KoolDock::applyBlur()
@@ -402,29 +447,25 @@ void KoolDock::setContainsMouse(bool contains)
     m_containsMouse = contains;
     // macOS-style auto-hide: the dock overlays on top of other windows
     // (exclusive zone stays 0 — never pushes them) and slides in/out from
-    // the screen edge with a fade. The window starts (and ends) hidden as
-    // a 2px trigger strip at the edge so nothing visible blocks input or
-    // shows through; when the cursor bumps the edge, the window expands
-    // to full size immediately and the QML pill animates in (slide +
-    // fade). When the cursor leaves, the QML pill animates out, and after
-    // the animation finishes this timer shrinks the window back to the
-    // trigger strip and disables blur — so the pill is never clipped
-    // mid-animation by the window shrinking underneath it.
+    // the screen edge with a fade. The window is always full-size; when
+    // hidden the pointer input region is restricted to the trigger strip
+    // (so normal mouse movement doesn't wake the dock except at the edge)
+    // while drag-and-drop sees the full surface geometry. When the cursor
+    // bumps the edge, the QML pill animates in (slide + fade). When the
+    // cursor leaves, the QML pill animates out, and after the animation
+    // finishes onHideTimer() restricts the input region again and disables
+    // blur.
     if (m_layer && KoolDockSettings::autoHide()) {
         if (contains) {
-            // Show: cancel any pending hide, expand to full size. Don't call
-            // applyBlur() here — it would use the stale blur pos from the
-            // hidden state. QML's updateBlur() fires immediately when the
-            // window resizes (and on every frame of the slide animation via
-            // the Translate's onXChanged/onYChanged), passing the correct
-            // transform-aware position to applyBlur() via updateBlurRegion().
+            // Show: cancel any pending hide, open full input region.
+            // Don't call applyBlur() here — QML's updateBlur() fires
+            // immediately (and on every frame of the slide animation)
+            // passing the correct transform-aware position.
             m_hideTimer.stop();
-            m_layer->setDesiredSize(QSize(maxDockWidth(), maxDockHeight()));
-            if (m_view) m_view->resize(QSize(maxDockWidth(), maxDockHeight()));
+            applyInputMask(false);
         } else {
             // Hide: start the timer — the QML animation plays during this
-            // delay (with the blur following the pill via updateBlur()),
-            // then onHideTimer() shrinks the window and disables blur.
+            // delay, then onHideTimer() restricts input and disables blur.
             m_hideTimer.start(200);
         }
     }
@@ -436,16 +477,10 @@ void KoolDock::onHideTimer()
     if (!m_layer || !KoolDockSettings::autoHide() || m_containsMouse) {
         return;
     }
-    // Shrink to a 2px trigger strip along the screen edge. The compositor
-    // clips the surface to this size, so neither the pill (already at
-    // opacity 0 from the QML animation) nor any blur is visible, and the
-    // thin strip is the only thing blocking input — just enough to detect
-    // the cursor bumping the edge.
-    const int trigger = 2;
-    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-    QSize hidden(vert ? trigger : maxDockWidth(),
-                 vert ? maxDockHeight() : trigger);
-    m_layer->setDesiredSize(hidden);
-    if (m_view) m_view->resize(hidden);
+    // Restrict the pointer input region to the trigger strip so normal
+    // mouse movement only wakes the dock at the screen edge.  The window
+    // stays full-size — drag-and-drop from external apps sees the full
+    // surface geometry and can enter to trigger expansion.
+    applyInputMask(true);
     KWindowEffects::enableBlurBehind(m_view, false);
 }
