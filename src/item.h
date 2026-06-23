@@ -19,6 +19,7 @@ class Item : public QObject
     Q_PROPERTY(bool isTask READ isTask CONSTANT)
     Q_PROPERTY(bool isActive READ isActive WRITE setActive NOTIFY isActiveChanged)
     Q_PROPERTY(bool isMinimized READ isMinimized WRITE setMinimized NOTIFY isMinimizedChanged)
+    Q_PROPERTY(bool isRunning READ isRunning WRITE setRunning NOTIFY isRunningChanged)
     Q_PROPERTY(int itemIndex READ itemIndex WRITE setItemIndex NOTIFY itemIndexChanged)
 
 public:
@@ -38,6 +39,7 @@ public:
     bool isLauncher() const { return m_kind == Kind::Launcher; }
     bool isActive() const { return m_isActive; }
     bool isMinimized() const { return m_isMinimized; }
+    bool isRunning() const { return m_isRunning; }
     int itemIndex() const { return m_itemIndex; }
 
     void setName(const QString &n) { if (m_name != n) { m_name = n; Q_EMIT nameChanged(); } }
@@ -47,6 +49,7 @@ public:
     void setWindowId(quint64 id) { if (m_windowId != id) { m_windowId = id; Q_EMIT windowIdChanged(); } }
     void setActive(bool on) { if (m_isActive != on) { m_isActive = on; Q_EMIT isActiveChanged(); } }
     void setMinimized(bool on) { if (m_isMinimized != on) { m_isMinimized = on; Q_EMIT isMinimizedChanged(); } }
+    void setRunning(bool on) { if (m_isRunning != on) { m_isRunning = on; Q_EMIT isRunningChanged(); } }
     void setItemIndex(int i) { if (m_itemIndex != i) { m_itemIndex = i; Q_EMIT itemIndexChanged(); } }
 
 Q_SIGNALS:
@@ -57,6 +60,7 @@ Q_SIGNALS:
     void windowIdChanged();
     void isActiveChanged();
     void isMinimizedChanged();
+    void isRunningChanged();
     void itemIndexChanged();
 
 private:
@@ -68,6 +72,7 @@ private:
     quint64 m_windowId = 0;
     bool m_isActive = false;
     bool m_isMinimized = false;
+    bool m_isRunning = false;
     int m_itemIndex = -1;
 };
 

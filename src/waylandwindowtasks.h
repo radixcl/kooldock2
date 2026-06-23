@@ -129,6 +129,7 @@ public:
         quint64 windowId = 0;
         QString title;
         QString iconName;
+        QString appId;
         bool minimized = false;
         bool active = false;
         bool skipTaskbar = false;

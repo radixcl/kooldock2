@@ -43,6 +43,7 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
         const WaylandWindowTasks::TaskData waylandData = m_waylandTasks->taskData(windowId);
         data.title = waylandData.title;
         data.iconName = waylandData.iconName;
+        data.appId = waylandData.appId;
         data.minimized = waylandData.minimized;
         data.active = waylandData.active;
         data.skipTaskbar = waylandData.skipTaskbar;

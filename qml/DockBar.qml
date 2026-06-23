@@ -58,7 +58,7 @@ Item {
         for (let i = 0; i < m.count; i++) {
             const d = m.itemData(i)
             listModel.append({name: d.name, iconName: d.iconName, isTask: d.isTask,
-                             windowId: d.windowId, itemIndex: d.itemIndex, sz: smallSize, ipos: 0})
+                             isRunning: d.isRunning, windowId: d.windowId, itemIndex: d.itemIndex, sz: smallSize, ipos: 0})
         }
         layout()
     }
@@ -166,6 +166,7 @@ Item {
             name: model.name
             iconName: model.iconName
             isTask: model.isTask
+            isRunning: model.isRunning
             windowId: model.windowId
             modelIndex: model.itemIndex
             itemSize: model.sz

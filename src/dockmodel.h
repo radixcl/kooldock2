@@ -60,6 +60,7 @@ private:
     void updateIndices();
     int insertTaskSorted(Item *item);
     bool shouldShowTask(const WindowTasks::TaskData &data) const;
+    Item *findLauncherForAppId(const QString &appId) const;
 
     QList<Item *> m_items;
     QHash<quint64, Item *> m_taskItems;

@@ -10,6 +10,7 @@
 
 #include <KDesktopFile>
 #include <KConfigGroup>
+#include <KService>
 #include <KWindowInfo>
 #include <KWindowSystem>
 #include <KX11Extras>
@@ -17,6 +18,8 @@
 #include <KIO/CommandLauncherJob>
 
 #include <QDebug>
+#include <QFileInfo>
+#include <QRegularExpression>
 
 DockModel::DockModel(WindowTasks *tasks, QObject *parent)
     : QAbstractListModel(parent)
@@ -53,7 +56,11 @@ void DockModel::activate(int row)
 {
     if (row < 0 || row >= m_items.size()) return;
     Item *item = m_items.at(row);
-    if (item->isTask()) {
+    // A launcher with a running task (fused) behaves like the task:
+    // click toggles minimize/activate instead of launching a new instance.
+    if (item->isLauncher() && item->isRunning() && item->windowId()) {
+        activateWindow(item->windowId());
+    } else if (item->isTask()) {
         activateWindow(item->windowId());
     } else {
         launch(row);
@@ -203,9 +210,29 @@ void DockModel::onWindowAdded(quint64 windowId)
 
     const WindowTasks::TaskData data = m_tasks->taskData(windowId);
     qDebug() << "  title=" << data.title << "icon=" << data.iconName
+             << "appId=" << data.appId
              << "skipTaskbar=" << data.skipTaskbar << "skipSwitcher=" << data.skipSwitcher
              << "minimized=" << data.minimized << "active=" << data.active;
     if (!shouldShowTask(data)) return;
+
+    // Fuse with a matching launcher if one exists AND isn't already fused
+    // with another window. If the launcher is already running (fused), the
+    // new window becomes a standalone task icon — the launcher keeps its
+    // running indicator, and the extra window shows alongside it.
+    Item *launcher = findLauncherForAppId(data.appId);
+    if (launcher && !launcher->isRunning()) {
+        qDebug() << "  fused with launcher" << launcher->name();
+        launcher->setRunning(true);
+        launcher->setWindowId(windowId);
+        launcher->setActive(data.active);
+        launcher->setMinimized(data.minimized);
+        m_taskItems.insert(windowId, launcher);
+        const int row = m_items.indexOf(launcher);
+        if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+        Q_EMIT countChanged();
+        Q_EMIT itemsChanged();
+        return;
+    }
 
     auto *item = new Item(Item::Kind::Task, data.title, data.iconName, QString(), windowId);
     item->setMinimized(data.minimized);
@@ -219,6 +246,21 @@ void DockModel::onWindowRemoved(quint64 windowId)
 {
     if (!m_taskItems.contains(windowId)) return;
     Item *item = m_taskItems.take(windowId);
+
+    // If the item is a fused launcher (not a standalone task), just unmark
+    // it — don't remove it from the dock.
+    if (item->isLauncher()) {
+        item->setRunning(false);
+        item->setWindowId(0);
+        item->setActive(false);
+        item->setMinimized(false);
+        const int row = m_items.indexOf(item);
+        if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+        Q_EMIT countChanged();
+        Q_EMIT itemsChanged();
+        return;
+    }
+
     const int row = m_items.indexOf(item);
     if (row >= 0) {
         beginRemoveRows({}, row, row);
@@ -243,10 +285,13 @@ void DockModel::onWindowChanged(quint64 windowId)
         return;
     }
 
-    item->setName(data.title);
-    item->setIconName(data.iconName);
-    item->setMinimized(data.minimized);
+    // Update fused launcher or standalone task.
     item->setActive(data.active);
+    item->setMinimized(data.minimized);
+    if (item->isTask()) {
+        item->setName(data.title);
+        item->setIconName(data.iconName);
+    }
 
     const int row = m_items.indexOf(item);
     if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
@@ -319,6 +364,45 @@ bool DockModel::isLauncher(int row) const
     return m_items.at(row)->isLauncher();
 }
 
+Item *DockModel::findLauncherForAppId(const QString &appId) const
+{
+    if (appId.isEmpty()) return nullptr;
+
+    auto execBase = [](const QString &exec) -> QString {
+        if (exec.isEmpty()) return {};
+        QString s = exec;
+        s.remove(QRegularExpression(QStringLiteral("%[a-zA-Z]")));
+        const QString first = s.section(QLatin1Char(' '), 0, 0);
+        return QFileInfo(first).fileName();
+    };
+
+    // Resolve the appId to the installed .desktop service so we can get
+    // the actual executable. KService::serviceByDesktopName knows how to
+    // map Wayland app_ids (e.g. "org.kde.konsole") to their .desktop files.
+    const KService::Ptr taskService = KService::serviceByDesktopName(appId);
+    const QString taskProgram = taskService ? execBase(taskService->exec()) : appId;
+
+    for (Item *item : m_items) {
+        if (!item->isLauncher() || item->desktopFile().isEmpty()) continue;
+        // Read the Exec directly from the launcher's .desktop file with
+        // KDesktopFile — KService::serviceByDesktopPath doesn't find
+        // .desktop files in our custom menuDir.
+        KDesktopFile df(item->desktopFile());
+        const QString launcherExec = df.desktopGroup().readEntry(QStringLiteral("Exec"), QString());
+        const QString launcherProgram = execBase(launcherExec);
+        if (launcherProgram.isEmpty()) continue;
+
+        // Match by executable (case-insensitive) — covers both the
+        // KService-resolved program and a direct appId comparison for
+        // apps where KService didn't find a service (e.g. "librewolf").
+        if (launcherProgram.compare(taskProgram, Qt::CaseInsensitive) == 0 ||
+            launcherProgram.compare(appId, Qt::CaseInsensitive) == 0) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+
 QVariant DockModel::data(const QModelIndex &idx, int role) const
 {
     if (!idx.isValid()) return {};
@@ -338,6 +422,7 @@ QVariantMap DockModel::itemData(int row) const
         {QStringLiteral("name"), item->name()},
         {QStringLiteral("iconName"), item->iconName()},
         {QStringLiteral("isTask"), item->isTask()},
+        {QStringLiteral("isRunning"), item->isRunning()},
         {QStringLiteral("windowId"), item->windowId()},
         {QStringLiteral("itemIndex"), item->itemIndex()},
     };

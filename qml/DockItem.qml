@@ -7,6 +7,7 @@ Item {
     property string name: ""
     property string iconName: ""
     property bool isTask: false
+    property bool isRunning: false
     property var windowId: 0
     property int modelIndex: -1
     property real itemSize: 48
@@ -184,7 +185,7 @@ Item {
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
         width: taskDotSize; height: taskDotSize; radius: taskDotSize / 2
-        color: taskDotColor; visible: isTask; opacity: taskDotOpacity
+        color: taskDotColor; visible: isTask || isRunning; opacity: taskDotOpacity
     }
 
     // Custom in-scene tooltip (macOS-style). Rendered as a child of this

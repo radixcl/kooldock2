@@ -5,6 +5,7 @@
 
 #include <QDebug>
 #include <QGuiApplication>
+#include <QIcon>
 #include <qnativeinterface.h>
 
 #include <cstring>
@@ -394,11 +395,20 @@ WaylandWindowTasks::TaskData WaylandWindowTasks::taskData(quint64 windowId) cons
     const WindowTaskInfo info = m_management->windowInfo(windowId);
     data.windowId = info.windowId;
     data.title = info.title;
-    // Fall back to appId when no themed icon name was provided. Many
-    // Wayland apps don't send themed_icon_name_changed but do send
-    // app_id_changed, and the appId is typically the desktop file name
-    // (e.g. "firefox") which QIcon::fromTheme can resolve.
-    data.iconName = info.iconName.isEmpty() ? info.appId : info.iconName;
+    data.appId = info.appId;
+    // Prefer themed_icon_name when it resolves to a real theme icon.
+    // Fall back to appId when themed_icon_name is empty OR when it names
+    // something that isn't in the icon theme (e.g. some apps report
+    // "wayland" as the themed icon name, which isn't a real icon).
+    // The appId is typically the desktop file name (e.g. "firefox",
+    // "librewolf") which QIcon::fromTheme can resolve.
+    if (!info.iconName.isEmpty() && QIcon::hasThemeIcon(info.iconName)) {
+        data.iconName = info.iconName;
+    } else if (!info.appId.isEmpty() && QIcon::hasThemeIcon(info.appId)) {
+        data.iconName = info.appId;
+    } else {
+        data.iconName = info.iconName.isEmpty() ? info.appId : info.iconName;
+    }
     data.minimized = info.state & QtWayland::org_kde_plasma_window_management::state_minimized;
     data.active = info.state & QtWayland::org_kde_plasma_window_management::state_active;
     data.skipTaskbar = info.state & QtWayland::org_kde_plasma_window_management::state_skiptaskbar;
