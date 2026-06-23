@@ -48,6 +48,12 @@
       <min>0</min>
       <max>100</max>
     </entry>
+    <entry name="edgeMargin" type="Int">
+      <label>Offset from the screen edge in pixels. Negative pushes the dock past other panels (e.g. the KDE taskbar) toward the edge; positive pushes it away. Use a negative value equal to the taskbar height to place the dock below it.</label>
+      <default>0</default>
+      <min>-300</min>
+      <max>300</max>
+    </entry>
 
     <!-- Sizes -->
     <entry name="smallIconSize" type="Int">
@@ -74,15 +80,39 @@
       <min>0</min>
       <max>64</max>
     </entry>
+    <entry name="iconPadding" type="Int">
+      <label>Padding between an icon's edge and its image, in pixels</label>
+      <default>4</default>
+      <min>0</min>
+      <max>32</max>
+    </entry>
     <entry name="zoomSpeed" type="Int">
       <label>Duration of the grow/shrink animation in milliseconds</label>
       <default>200</default>
       <min>50</min>
       <max>1000</max>
     </entry>
+    <entry name="dockHeight" type="Int">
+      <label>Height of the dock background pill, in pixels</label>
+      <default>60</default>
+      <min>32</min>
+      <max>200</max>
+    </entry>
     <entry name="showNames" type="Bool">
       <label>Show the name of the icon on a tooltip when the pointer is over it</label>
       <default>true</default>
+    </entry>
+    <entry name="tooltipDelay" type="Int">
+      <label>Milliseconds to wait before showing a tooltip</label>
+      <default>500</default>
+      <min>0</min>
+      <max>5000</max>
+    </entry>
+    <entry name="tooltipTimeout" type="Int">
+      <label>Milliseconds before a tooltip disappears</label>
+      <default>2000</default>
+      <min>0</min>
+      <max>10000</max>
     </entry>
     <entry name="cleanerTooltip" type="Bool">
       <label>Use a dynamic background for tooltips (uses more memory and CPU)</label>
@@ -136,6 +166,12 @@
       <min>0</min>
       <max>100</max>
     </entry>
+    <entry name="cornerRadius" type="Int">
+      <label>Corner radius of the dock background, in pixels</label>
+      <default>18</default>
+      <min>0</min>
+      <max>60</max>
+    </entry>
     <entry name="blurBackground" type="Bool">
       <label>Apply a blur behind the dock background (requires compositor support)</label>
       <default>true</default>
@@ -151,6 +187,12 @@
     <entry name="borderColor" type="String">
       <label>Color of the dock border</label>
       <default>#b1c4de</default>
+    </entry>
+    <entry name="borderWidth" type="Double">
+      <label>Width of the dock border, in pixels</label>
+      <default>0.5</default>
+      <min>0</min>
+      <max>10</max>
     </entry>
     <entry name="separatorColor" type="String">
       <label>Color of the separator between launchers and the taskbar</label>
@@ -169,6 +211,22 @@
     <entry name="currentDesktopOnly" type="Bool">
       <label>Show only windows on the current virtual desktop</label>
       <default>false</default>
+    </entry>
+    <entry name="taskIndicatorSize" type="Int">
+      <label>Size of the task indicator dot, in pixels</label>
+      <default>4</default>
+      <min>0</min>
+      <max>16</max>
+    </entry>
+    <entry name="taskIndicatorColor" type="String">
+      <label>Color of the task indicator dot</label>
+      <default>#aaffffff</default>
+    </entry>
+    <entry name="taskIndicatorOpacity" type="Double">
+      <label>Opacity of the task indicator dot (0.0 = invisible, 1.0 = opaque)</label>
+      <default>0.6</default>
+      <min>0</min>
+      <max>1</max>
     </entry>
     <entry name="showNotifications" type="Bool">
       <label>Highlight a taskbar icon when its window changes while inactive</label>

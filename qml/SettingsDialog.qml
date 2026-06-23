@@ -73,6 +73,15 @@ Item {
                             onActivated: { if (settings) settings.orientation = currentIndex }
                         }
                     }
+                    RowLayout {
+                        Label { text: i18n("Edge margin (px):") }
+                        SpinBox {
+                            from: -300; to: 300; stepSize: 1
+                            value: settings ? settings.edgeMargin : 0
+                            onValueModified: { if (settings) settings.edgeMargin = value }
+                        }
+                        Label { text: i18n("(negative = below other panels)") ; opacity: 0.6 }
+                    }
                     CheckBox {
                         text: i18n("Show app menu as first item")
                         checked: settings ? settings.showKMenu : false
@@ -89,11 +98,26 @@ Item {
                     id: appCol
                     width: parent.width
                     RowLayout {
+                        Label { text: i18n("Background color:") }
+                        TextField {
+                            text: settings ? settings.backgroundColor : "#1e1e2e"
+                            onEditingFinished: { if (settings) settings.backgroundColor = text }
+                        }
+                    }
+                    RowLayout {
                         Label { text: i18n("Opacity (%):") }
                         SpinBox {
                             from: 0; to: 100; stepSize: 5
                             value: settings ? settings.backgroundOpacity : 70
                             onValueModified: { if (settings) settings.backgroundOpacity = value }
+                        }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Corner radius:") }
+                        SpinBox {
+                            from: 0; to: 60; stepSize: 1
+                            value: settings ? settings.cornerRadius : 18
+                            onValueModified: { if (settings) settings.cornerRadius = value }
                         }
                     }
                     CheckBox {
@@ -105,6 +129,22 @@ Item {
                         text: i18n("Show borders")
                         checked: settings ? settings.showBorders : false
                         onToggled: { if (settings) settings.showBorders = checked }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Border color:") }
+                        TextField {
+                            text: settings ? settings.borderColor : "#b1c4de"
+                            onEditingFinished: { if (settings) settings.borderColor = text }
+                        }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Border width:") }
+                        SpinBox {
+                            from: 0; to: 10; stepSize: 1
+                            value: settings ? settings.borderWidth * 2 : 1
+                            onValueModified: { if (settings) settings.borderWidth = value / 2 }
+                        }
+                        Label { text: i18n("(0.5 px steps)") ; opacity: 0.6 }
                     }
                 }
             }
@@ -149,6 +189,22 @@ Item {
                         }
                     }
                     RowLayout {
+                        Label { text: i18n("Icon padding:") }
+                        SpinBox {
+                            from: 0; to: 32; stepSize: 1
+                            value: settings ? settings.iconPadding : 4
+                            onValueModified: { if (settings) settings.iconPadding = value }
+                        }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Dock height:") }
+                        SpinBox {
+                            from: 32; to: 200; stepSize: 2
+                            value: settings ? settings.dockHeight : 60
+                            onValueModified: { if (settings) settings.dockHeight = value }
+                        }
+                    }
+                    RowLayout {
                         Label { text: i18n("Zoom speed (ms):") }
                         SpinBox {
                             from: 50; to: 1000; stepSize: 50
@@ -181,6 +237,29 @@ Item {
                         checked: settings ? settings.currentDesktopOnly : false
                         onToggled: { if (settings) settings.currentDesktopOnly = checked }
                     }
+                    RowLayout {
+                        Label { text: i18n("Indicator size:") }
+                        SpinBox {
+                            from: 0; to: 16; stepSize: 1
+                            value: settings ? settings.taskIndicatorSize : 4
+                            onValueModified: { if (settings) settings.taskIndicatorSize = value }
+                        }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Indicator color:") }
+                        TextField {
+                            text: settings ? settings.taskIndicatorColor : "#aaffffff"
+                            onEditingFinished: { if (settings) settings.taskIndicatorColor = text }
+                        }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Indicator opacity:") }
+                        SpinBox {
+                            from: 0; to: 100; stepSize: 5
+                            value: settings ? settings.taskIndicatorOpacity * 100 : 60
+                            onValueModified: { if (settings) settings.taskIndicatorOpacity = value / 100 }
+                        }
+                    }
                 }
             }
 
@@ -197,6 +276,13 @@ Item {
                         onToggled: { if (settings) settings.showNames = checked }
                     }
                     RowLayout {
+                        Label { text: i18n("Font family:") }
+                        TextField {
+                            text: settings ? settings.tooltipFont : "Sans Serif"
+                            onEditingFinished: { if (settings) settings.tooltipFont = text }
+                        }
+                    }
+                    RowLayout {
                         Label { text: i18n("Font size:") }
                         SpinBox {
                             from: 6; to: 72; stepSize: 1
@@ -204,10 +290,38 @@ Item {
                             onValueModified: { if (settings) settings.tooltipSize = value }
                         }
                     }
+                    RowLayout {
+                        Label { text: i18n("Text color:") }
+                        TextField {
+                            text: settings ? settings.tooltipColor : "#f1f1f1"
+                            onEditingFinished: { if (settings) settings.tooltipColor = text }
+                        }
+                    }
                     CheckBox {
                         text: i18n("Bold")
                         checked: settings ? settings.tooltipBold : false
                         onToggled: { if (settings) settings.tooltipBold = checked }
+                    }
+                    CheckBox {
+                        text: i18n("Italic")
+                        checked: settings ? settings.tooltipItalic : false
+                        onToggled: { if (settings) settings.tooltipItalic = checked }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Delay (ms):") }
+                        SpinBox {
+                            from: 0; to: 5000; stepSize: 50
+                            value: settings ? settings.tooltipDelay : 500
+                            onValueModified: { if (settings) settings.tooltipDelay = value }
+                        }
+                    }
+                    RowLayout {
+                        Label { text: i18n("Timeout (ms):") }
+                        SpinBox {
+                            from: 0; to: 10000; stepSize: 100
+                            value: settings ? settings.tooltipTimeout : 2000
+                            onValueModified: { if (settings) settings.tooltipTimeout = value }
+                        }
                     }
                 }
             }
