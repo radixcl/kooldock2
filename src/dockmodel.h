@@ -36,6 +36,10 @@ public:
     Q_INVOKABLE void activateWindow(quint64 windowId);
     Q_INVOKABLE void launch(int row);
     Q_INVOKABLE QVariantMap itemData(int row) const;
+    Q_INVOKABLE void addLauncher(const QString &filePath);
+    Q_INVOKABLE void removeLauncher(int row);
+    Q_INVOKABLE void moveLauncher(int from, int to);
+    Q_INVOKABLE bool isLauncher(int row) const;
 
 public Q_SLOTS:
     void reload();

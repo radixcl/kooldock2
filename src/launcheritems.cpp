@@ -65,14 +65,75 @@ void LauncherItems::refresh()
 
 void LauncherItems::addLauncher(const QString &desktopFile)
 {
-    Q_UNUSED(desktopFile);
+    // Copy the .desktop file into the dock's menu directory with a
+    // high numeric prefix so it lands at the end of the sort order.
+    const QFileInfo srcInfo(desktopFile);
+    const QString baseName = srcInfo.completeBaseName();
+    const QString suffix = srcInfo.suffix().isEmpty() ? QStringLiteral("desktop") : srcInfo.suffix();
+
+    const QStringList existing = sortedFiles();
+    int nextNum = 90;
+    for (const QString &f : existing) {
+        const int prefix = f.section(QLatin1Char('-'), 0, 0).toInt();
+        if (prefix >= nextNum) nextNum = prefix + 10;
+    }
+    const QString dest = m_menuDir + QStringLiteral("%1-%2.%3").arg(nextNum, 2, 10, QLatin1Char('0')).arg(baseName, suffix);
+    if (QFile::exists(dest)) QFile::remove(dest);
+    if (!QFile::copy(desktopFile, dest)) {
+        // Fall back to writing a minimal .desktop from scratch if copy
+        // fails (e.g. source not readable).
+        return;
+    }
     Q_EMIT changed();
 }
 
-void LauncherItems::removeLauncher(const QString &desktopFile)
+void LauncherItems::removeLauncher(int index)
 {
-    QFile::remove(desktopFile);
+    const QStringList files = sortedFiles();
+    if (index < 0 || index >= files.size()) return;
+    QFile::remove(m_menuDir + files.at(index));
+    renumber(files.mid(0, index) + files.mid(index + 1));
     Q_EMIT changed();
+}
+
+void LauncherItems::moveLauncher(int from, int to)
+{
+    const QStringList files = sortedFiles();
+    if (from < 0 || from >= files.size() || to < 0 || to >= files.size() || from == to) return;
+
+    QStringList reordered = files;
+    reordered.move(from, to);
+    renumber(reordered);
+    Q_EMIT changed();
+}
+
+QStringList LauncherItems::sortedFiles() const
+{
+    QDir dir(m_menuDir);
+    return dir.entryList({QStringLiteral("*.desktop")}, QDir::Files, QDir::Name);
+}
+
+void LauncherItems::renumber(const QStringList &orderedPaths)
+{
+    // Rename each file with a sequential 00, 10, 20, ... prefix so the
+    // QDir::Name sort order matches the desired launcher order. Rename
+    // to temp names first to avoid collisions during the shuffle.
+    const QString tmpSuffix = QStringLiteral(".tmp");
+    int n = orderedPaths.size();
+    // Phase 1: rename all to temp names.
+    for (int i = 0; i < n; i++) {
+        const QString oldPath = m_menuDir + orderedPaths.at(i);
+        const QString tmpPath = oldPath + tmpSuffix;
+        if (QFile::exists(tmpPath)) QFile::remove(tmpPath);
+        QFile::rename(oldPath, tmpPath);
+    }
+    // Phase 2: rename from temp to final numbered names.
+    for (int i = 0; i < n; i++) {
+        const QString baseName = orderedPaths.at(i).section(QLatin1Char('-'), 1);
+        const QString tmpPath = m_menuDir + orderedPaths.at(i) + tmpSuffix;
+        const QString newPath = m_menuDir + QStringLiteral("%1-%2").arg(i * 10, 2, 10, QLatin1Char('0')).arg(baseName);
+        QFile::rename(tmpPath, newPath);
+    }
 }
 
 void LauncherItems::ensureDefaultLaunchers() const

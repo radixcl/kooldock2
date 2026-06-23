@@ -273,6 +273,52 @@ void DockModel::onLaunchersChanged() { reload(); }
 
 void DockModel::rebuild() { reload(); }
 
+void DockModel::addLauncher(const QString &filePath)
+{
+    m_launchers->addLauncher(filePath);
+}
+
+void DockModel::removeLauncher(int row)
+{
+    if (row < 0 || row >= m_items.size()) return;
+    if (!m_items.at(row)->isLauncher()) return;
+    // Count only launchers up to this row to get the launcher index.
+    int launcherIdx = 0;
+    for (int i = 0; i < row; i++) {
+        if (m_items.at(i)->isLauncher()) launcherIdx++;
+    }
+    m_launchers->removeLauncher(launcherIdx);
+}
+
+void DockModel::moveLauncher(int from, int to)
+{
+    if (from < 0 || from >= m_items.size()) return;
+    if (!m_items.at(from)->isLauncher()) return;
+    // Map model rows to launcher-only indices.
+    int fromLauncher = 0;
+    for (int i = 0; i < from; i++) {
+        if (m_items.at(i)->isLauncher()) fromLauncher++;
+    }
+    // Clamp 'to' to the launcher range and map it.
+    int lastLauncher = -1;
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items.at(i)->isLauncher()) lastLauncher = i;
+    }
+    if (to > lastLauncher) to = lastLauncher;
+    if (to < 0 || !m_items.at(to)->isLauncher()) return;
+    int toLauncher = 0;
+    for (int i = 0; i < to; i++) {
+        if (m_items.at(i)->isLauncher()) toLauncher++;
+    }
+    m_launchers->moveLauncher(fromLauncher, toLauncher);
+}
+
+bool DockModel::isLauncher(int row) const
+{
+    if (row < 0 || row >= m_items.size()) return false;
+    return m_items.at(row)->isLauncher();
+}
+
 QVariant DockModel::data(const QModelIndex &idx, int role) const
 {
     if (!idx.isValid()) return {};

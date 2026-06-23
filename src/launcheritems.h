@@ -20,16 +20,19 @@ public:
 
     QString menuDir() const;
 
-public Q_SLOTS:
+    public Q_SLOTS:
     void refresh();
     void addLauncher(const QString &desktopFile);
-    void removeLauncher(const QString &desktopFile);
+    void removeLauncher(int index);
+    void moveLauncher(int from, int to);
 
 Q_SIGNALS:
     void changed();
 
 private:
     void ensureDefaultLaunchers() const;
+    QStringList sortedFiles() const;
+    void renumber(const QStringList &orderedPaths);
 
     QString m_menuDir;
 };
