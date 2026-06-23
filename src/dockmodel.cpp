@@ -365,7 +365,11 @@ void DockModel::onActiveWindowChanged(quint64 windowId)
     }
 }
 
-void DockModel::onLaunchersChanged() { reload(); }
+void DockModel::onLaunchersChanged()
+{
+    if (m_suppressReload) return;
+    reload();
+}
 
 void DockModel::rebuild() { reload(); }
 
@@ -377,13 +381,33 @@ void DockModel::addLauncher(const QString &filePath)
 void DockModel::removeLauncher(int row)
 {
     if (row < 0 || row >= m_items.size()) return;
-    if (!m_items.at(row)->isLauncher()) return;
+    Item *item = m_items.at(row);
+    if (!item->isLauncher()) return;
     // Count only launchers up to this row to get the launcher index.
     int launcherIdx = 0;
     for (int i = 0; i < row; i++) {
         if (m_items.at(i)->isLauncher()) launcherIdx++;
     }
+    // Remove from the on-disk launcher store without triggering a full
+    // model reload — we'll remove the row ourselves below.
+    m_suppressReload = true;
     m_launchers->removeLauncher(launcherIdx);
+    m_suppressReload = false;
+
+    // If this launcher was fused with a window, un-fuse it so the task
+    // doesn't try to reference the deleted item.
+    if (item->windowId() && m_taskItems.contains(item->windowId())) {
+        m_taskItems.remove(item->windowId());
+    }
+
+    beginRemoveRows({}, row, row);
+    m_items.removeAt(row);
+    endRemoveRows();
+    delete item;
+    updateIndices();
+    Q_EMIT itemRemoved(row);
+    Q_EMIT countChanged();
+    Q_EMIT itemsChanged();
 }
 
 void DockModel::moveLauncher(int from, int to)
@@ -406,7 +430,23 @@ void DockModel::moveLauncher(int from, int to)
     for (int i = 0; i < to; i++) {
         if (m_items.at(i)->isLauncher()) toLauncher++;
     }
+    m_suppressReload = true;
     m_launchers->moveLauncher(fromLauncher, toLauncher);
+    m_suppressReload = false;
+
+    // Move the item within m_items.
+    if (from == to) return;
+    // beginMoveRows works with the model before modification.
+    // Subtract one from to when moving forward because the item's row
+    // shifts after removal, but we emit the move against the *current*
+    // model state.
+    const int destRow = (to > from) ? to + 1 : to;
+    if (!beginMoveRows({}, from, from, {}, destRow)) return;
+    m_items.move(from, to);
+    endMoveRows();
+    updateIndices();
+    Q_EMIT countChanged();
+    Q_EMIT itemsChanged();
 }
 
 bool DockModel::isLauncher(int row) const

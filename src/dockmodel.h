@@ -53,6 +53,7 @@ public Q_SLOTS:
 Q_SIGNALS:
     void countChanged();
     void itemsChanged();
+    void itemRemoved(int row);
     void activateAppMenu();
     void activateTrash();
 
@@ -72,6 +73,7 @@ private:
     LauncherItems *m_launchers;
     WindowTasks *m_tasks = nullptr;
     quint64 m_activeWindow = 0;
+    bool m_suppressReload = false;
 };
 
 #endif

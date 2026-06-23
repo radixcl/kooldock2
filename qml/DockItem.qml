@@ -32,6 +32,8 @@ Item {
     property string tooltipFont: "Sans Serif"
     property color tooltipColor: "#f1f1f1"
     property color tooltipShadowColor: "#000000"
+    property bool trashIsEmpty: true
+    property bool barFrozen: false
 
     // Drag-and-drop state. When dragging, the item is lifted (scale +
     // shadow), follows the cursor, and the bar handles reordering or
@@ -72,10 +74,10 @@ Item {
     x: (vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos) + dragOffsetX
     y: (vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))) + dragOffsetY
 
-    Behavior on width  { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
-    Behavior on height { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
-    Behavior on x      { enabled: !dragActive; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
-    Behavior on y      { enabled: !dragActive; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on width  { enabled: !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on height { enabled: !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on x      { enabled: !dragActive && !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on y      { enabled: !dragActive && !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
 
     // Lift effect while dragging: scale up slightly + drop shadow.
     // beingDestroyed drives the poof scale-down via destroyScale.
@@ -212,7 +214,8 @@ Item {
         anchors.centerIn: parent
         readonly property real maxDim: Math.min(parent.width, parent.height) - iconPad * 2
         width: maxDim; height: maxDim
-        source: item.iconName.length > 0 ? ("image://kicon/" + item.iconName) : "image://kicon/application-x-executable"
+        readonly property string activeIcon: item.isTrash && !item.trashIsEmpty ? "user-trash-full" : item.iconName
+        source: item.iconName.length > 0 ? ("image://kicon/" + activeIcon) : "image://kicon/application-x-executable"
         sourceSize.width: maxIconSize; sourceSize.height: maxIconSize
         fillMode: Image.PreserveAspectFit
         smooth: true; mipmap: true; asynchronous: true

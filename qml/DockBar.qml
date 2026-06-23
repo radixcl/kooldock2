@@ -17,7 +17,9 @@ Item {
     // this function, so using it as an input here would make the two chase
     // each other.
     property real windowExtent: 0
+    property real windowCrossExtent: 0
     property real globalMousePos: 0
+    property real globalCrossPos: 0
 
     property bool containsMouse: false
     property real contentLength: 0
@@ -43,6 +45,9 @@ Item {
     property string tooltipFont: "Sans Serif"
     property color tooltipColor: "#f1f1f1"
     property color tooltipShadowColor: "#000000"
+    property bool trashIsEmpty: true
+
+    signal emptyTrash()
 
     clip: false
 
@@ -80,24 +85,28 @@ Item {
     ListModel { id: listModel }
 
     // Context menu state: which item triggered the menu, so the menu
-    // items can show/hide based on the item type. Also used to keep the
-    // dock visible while the menu is open (auto-hide fix).
+    // items can show/hide based on the item type.
     property int contextMenuIndex: -1
     property var contextMenuItem: null
+
+    // True while any menu (context menu or dock-wide right-click menu) is
+    // visible.  Main.qml feeds this into containsMouse so the dock stays
+    // frozen — no auto-hide — for the entire lifetime of the menu, unlike
+    // the dragActive heartbeat which expired after 500ms and broke the
+    // freeze while the menu was still open.
+    readonly property bool frozen: contextMenu.visible || dockMenu.visible
 
     function showMenu(item, pt) {
         contextMenuIndex = item.modelIndex
         contextMenuItem = item
-        // Keep the dock visible while the menu is open — without this,
-        // the cursor moving to the popup menu causes the HoverHandler to
-        // lose hover, containsMouse goes false, and auto-hide triggers.
-        if (bar.kooldock) bar.kooldock.setDragActive(true)
         contextMenu.popup(pt)
     }
     function hideMenu() {
         contextMenuItem = null
         contextMenuIndex = -1
-        if (bar.kooldock) bar.kooldock.setDragActive(false)
+    }
+    function showTrashMenu(pt) {
+        trashMenu.popup(pt)
     }
 
     function refreshItems() {
@@ -130,8 +139,31 @@ Item {
         // identical either way (verified by a Node.js geometry sim).
         const barNearEdge = windowExtent / 2 - bar.contentLength / 2
         const localMousePos = globalMousePos - barNearEdge
-        const margin = spacing * 2
-        bar.containsMouse = localMousePos > -margin && localMousePos < bar.contentLength + margin
+        // Non-autohide: zoom starts exactly when the cursor touches the pill
+        // edge. Autohide: keep a margin so zoom fires promptly when the dock
+        // slides in from the edge and the cursor may not be perfectly aligned.
+        const margin = autoHide ? (spacing * 2) : 0
+        // Long-axis check: cursor must be within the pill's span along the
+        // layout direction.
+        const inLongAxis = localMousePos > -margin && localMousePos < bar.contentLength + margin
+        // Short-axis check: cursor must be within the icon zone (from the
+        // screen edge to bigSize + spacing, the tallest zoomed icon). Without
+        // this, moving the cursor vertically off the dock while staying within
+        // its horizontal span kept containsMouse true and the dock "active".
+        const crossMargin = spacing
+        const inCrossAxis = vertical
+            ? (globalCrossPos > -crossMargin && globalCrossPos < bar.width + crossMargin)
+            : (globalCrossPos > -crossMargin && globalCrossPos < bar.height + crossMargin)
+        // For the short-axis check, the icon zone extends from the anchored
+        // screen edge outward by bigSize+spacing (the tallest possible
+        // zoomed icon). For Top/LeftEdge the edge is at coordinate 0; for
+        // Bottom/RightEdge the edge is at windowCrossExtent.
+        const atTopOrLeft = edge === Qt.TopEdge || edge === Qt.LeftEdge
+        bar.containsMouse = inLongAxis && (
+            atTopOrLeft
+                ? (globalCrossPos > -crossMargin && globalCrossPos < bigSize + spacing + crossMargin)
+                : (globalCrossPos > windowCrossExtent - bigSize - spacing - crossMargin &&
+                   globalCrossPos < windowCrossExtent + crossMargin))
 
         // Step 1: sizes from a parabola centered at the mouse, iterated a
         // few times against the running center estimate. Gated by both
@@ -195,13 +227,30 @@ Item {
     Connections {
         target: kooldock && kooldock.model ? kooldock.model : null
         function onItemsChanged() { bar.refreshItems() }
-        function onCountChanged() { bar.refreshItems() }
+        function onCountChanged() {
+            // If count went down by one, itemRemoved already handled it.
+            // For other cases (reload, settings change), do a full refresh.
+            if (listModel.count !== kooldock.model.count) bar.refreshItems()
+        }
+        function onItemRemoved(row) {
+            // Remove just the one row from the ListModel without recreating
+            // every delegate — avoids the "reappear from left to right" flash.
+            if (row >= 0 && row < listModel.count) {
+                listModel.remove(row)
+                // Refresh itemIndex for the shifted items.
+                for (let i = row; i < listModel.count; i++) {
+                    const d = bar.kooldock.model.itemData(i)
+                    listModel.setProperty(i, "itemIndex", d.itemIndex)
+                }
+                bar.layout()
+            }
+        }
     }
 
     Component.onCompleted: refreshItems()
     onKooldockChanged: refreshItems()
-    onGlobalMousePosChanged: layout()
-    onWindowExtentChanged: layout()
+    onGlobalMousePosChanged: { if (!bar.frozen) layout() }
+    onWindowExtentChanged: { if (!bar.frozen) layout() }
     // Geometry settings changed (Apply/OK in the preferences dialog) — sizes
     // feed into every icon's rest size in the model, so go through
     // refreshItems() rather than just layout().
@@ -209,6 +258,37 @@ Item {
     onBigSizeChanged: refreshItems()
     onZoomRangeChanged: layout()
     onSpacingChanged: refreshItems()
+
+    // DropArea for external .desktop file drops to add launchers.  Placed
+    // before the Repeater so it sits below the DockItem delegates in the
+    // visual stacking order — this lets the trash DropArea (inside DockItem)
+    // capture drops first, while non-trash areas fall through to this one.
+    DropArea {
+        anchors.fill: parent
+        enabled: true
+        keys: ["text/uri-list"]
+
+        onEntered: (drop) => {
+            if (bar.kooldock) bar.kooldock.setDragActive(true)
+        }
+        onPositionChanged: (drop) => {
+            if (bar.kooldock) bar.kooldock.setDragActive(true)
+        }
+        onDropped: (drop) => {
+            if (drop.hasUrls) {
+                const urls = drop.urls
+                for (let i = 0; i < urls.length; i++) {
+                    const url = urls[i]
+                    if (url.toString().endsWith(".desktop")) {
+                        const localFile = url.toString().replace("file://", "")
+                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
+                            bar.kooldock.model.addLauncher(localFile)
+                    }
+                }
+                drop.accept()
+            }
+        }
+    }
 
     Repeater {
         model: listModel
@@ -242,6 +322,8 @@ Item {
             tooltipFont: bar.tooltipFont
             tooltipColor: bar.tooltipColor
             tooltipShadowColor: bar.tooltipShadowColor
+            trashIsEmpty: bar.trashIsEmpty
+            barFrozen: bar.frozen
 
             onActivated: {
                 if (bar.kooldock && bar.kooldock.model)
@@ -249,7 +331,11 @@ Item {
             }
 
             onContextMenuRequested: pt => {
-                if (model.isAppMenu || model.isTrash) return
+                if (model.isAppMenu) return
+                if (model.isTrash) {
+                    bar.showTrashMenu(pt)
+                    return
+                }
                 bar.showMenu(delegateItem, pt)
             }
 
@@ -317,38 +403,6 @@ Item {
             if (idx >= 0 && bar.kooldock && bar.kooldock.model)
                 bar.kooldock.model.removeLauncher(idx)
             idx = -1
-        }
-    }
-
-    // DropArea: accept external .desktop file drops to add launchers.
-    // This covers dragging a .desktop file from the file manager onto
-    // the dock. Also extends the auto-hide drag heartbeat so the dock
-    // stays visible when the drag moves from the window edge into the
-    // pill area (DropArea transfer).
-    DropArea {
-        anchors.fill: parent
-        enabled: true
-        keys: ["text/uri-list"]
-
-        onEntered: (drop) => {
-            if (bar.kooldock) bar.kooldock.setDragActive(true)
-        }
-        onPositionChanged: (drop) => {
-            if (bar.kooldock) bar.kooldock.setDragActive(true)
-        }
-        onDropped: (drop) => {
-            if (drop.hasUrls) {
-                const urls = drop.urls
-                for (let i = 0; i < urls.length; i++) {
-                    const url = urls[i]
-                    if (url.toString().endsWith(".desktop")) {
-                        const localFile = url.toString().replace("file://", "")
-                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
-                            bar.kooldock.model.addLauncher(localFile)
-                    }
-                }
-                drop.accept()
-            }
         }
     }
 
@@ -448,17 +502,35 @@ Item {
         }
     }
 
+    // Trash right-click menu: open folder + empty trash.
+    Menu {
+        id: trashMenu
+        MenuItem {
+            text: i18n("&Open Trash")
+            icon.name: "user-trash"
+            onTriggered: {
+                if (bar.kooldock) bar.kooldock.openTrash()
+            }
+        }
+        MenuItem {
+            text: i18n("Emp&ty Trash")
+            icon.name: "trash-empty"
+            enabled: !bar.trashIsEmpty
+            onTriggered: {
+                bar.emptyTrash()
+            }
+        }
+    }
+
     MouseArea {
         anchors.fill: parent; acceptedButtons: Qt.RightButton
         onClicked: {
-            if (bar.kooldock) bar.kooldock.setDragActive(true)
             dockMenu.popup()
         }
     }
 
     Menu {
         id: dockMenu
-        onClosed: { if (bar.kooldock) bar.kooldock.setDragActive(false) }
         MenuItem { text: i18n("Edit &Preferences"); icon.name: "configure"
             onTriggered: { if (bar.kooldock) bar.kooldock.showPreferences() } }
         MenuItem { text: i18n("&Reload Configuration"); icon.name: "view-refresh"

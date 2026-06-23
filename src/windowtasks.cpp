@@ -58,13 +58,20 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
 
     const KWindowInfo info(static_cast<WId>(windowId),
                            NET::WMState | NET::WMName | NET::WMVisibleName,
-                           NET::WM2WindowClass);
+                           NET::WM2WindowClass | NET::WM2DesktopFileName);
     if (!info.valid()) {
         return data;
     }
 
     data.title = info.visibleName();
     data.iconName = QString::fromLatin1(info.windowClassClass());
+    // Resolve the window's .desktop file name (appId) so the model can
+    // fuse new windows with matching launchers.  Fall back to the window
+    // class when _NET_WM_DESKTOP_FILE isn't set by the application.
+    data.appId = QString::fromUtf8(info.desktopFileName());
+    if (data.appId.isEmpty()) {
+        data.appId = QString::fromLatin1(info.windowClassClass());
+    }
     data.minimized = info.isMinimized();
     data.active = (windowId == m_activeWindow);
     data.skipTaskbar = info.state() & NET::SkipTaskbar;

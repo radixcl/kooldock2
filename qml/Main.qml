@@ -60,7 +60,8 @@ Item {
     // derived from its content width, so computing "mouse relative to the
     // bar's position" up here would make the two chase each other.
     HoverHandler { id: hoverHandler }
-    readonly property bool containsMouse: dockBar.containsMouse || (kooldock ? kooldock.dragActive : false)
+    readonly property bool containsMouse: dockBar.containsMouse || dockBar.frozen
+                                            || (kooldock ? kooldock.dragActive : false)
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
 
     // Suppress the auto-hide animation on the very first binding pass.
@@ -155,8 +156,8 @@ Item {
             onYChanged: bg.updateBlur()
         }
 
-        Behavior on width   { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
-        Behavior on height  { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
+        Behavior on width   { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
+        Behavior on height  { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
         Behavior on opacity { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         Behavior on scale   { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -216,7 +217,22 @@ Item {
             tooltipFont: root.tooltipFont
             tooltipColor: root.tooltipColor
             tooltipShadowColor: root.tooltipShadowColor
+            trashIsEmpty: kooldock ? kooldock.trashIsEmpty : true
+            onEmptyTrash: { if (kooldock) kooldock.emptyTrash() }
+            // Stable inputs from Main.qml: the window's extent along the dock's
+            // long axis (width for Top/BottomEdge, height for Left/RightEdge — set
+            // by the compositor/layer-shell, unrelated to anything we compute here)
+            // and the cursor's position along that same axis in the window's
+            // never-moving frame. We deliberately do NOT use the bar's own live
+            // on-screen position to find the mouse: the bar stays centered at
+            // extent/2 - contentLength/2, i.e. its position is itself an output of
+            // this function, so using it as an input here would make the two chase
+            // each other.
             windowExtent: vertical ? root.height : root.width
+            // Short-axis extent of the window (height for horizontal edges,
+            // width for vertical edges). Used by layout() to check whether the
+            // cursor is still within the icon zone vertically.
+            windowCrossExtent: vertical ? root.width : root.height
             // Once the pointer leaves the window, point.position freezes at
             // its last value and never changes again, so nothing would
             // re-trigger layout() to notice the mouse is gone. Force a
@@ -224,6 +240,9 @@ Item {
             // drops to false and the dock shrinks back.
             globalMousePos: hoverHandler.hovered
                             ? (vertical ? hoverHandler.point.position.y : hoverHandler.point.position.x)
+                            : -100000
+            globalCrossPos: hoverHandler.hovered
+                            ? (vertical ? hoverHandler.point.position.x : hoverHandler.point.position.y)
                             : -100000
         }
     }

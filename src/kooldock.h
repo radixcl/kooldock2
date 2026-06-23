@@ -31,6 +31,7 @@ class KoolDock : public QObject
     Q_PROPERTY(bool containsMouse READ containsMouse NOTIFY containsMouseChanged)
     Q_PROPERTY(bool dragActive READ dragActive NOTIFY dragActiveChanged)
     Q_PROPERTY(QString themeName READ themeName NOTIFY themeNameChanged)
+    Q_PROPERTY(bool trashIsEmpty READ isTrashEmpty NOTIFY trashIsEmptyChanged)
 
 public:
     explicit KoolDock(QObject *parent = nullptr);
@@ -45,6 +46,7 @@ public:
     bool autoHide() const;
     bool containsMouse() const;
     bool dragActive() const;
+    bool isTrashEmpty() const;
     QString themeName() const;
 
 public Q_SLOTS:
@@ -55,6 +57,7 @@ public Q_SLOTS:
     Q_INVOKABLE void showAppMenu();
     Q_INVOKABLE void openTrash();
     Q_INVOKABLE void trashFiles(const QVariantList &urls);
+    Q_INVOKABLE void emptyTrash();
     void reload();
     void showPreferences();
     void quit();
@@ -66,11 +69,13 @@ Q_SIGNALS:
     void autoHideChanged();
     void containsMouseChanged();
     void dragActiveChanged();
+    void trashIsEmptyChanged();
     void themeNameChanged();
 
 private Q_SLOTS:
     void onScreenChanged(QScreen *screen);
     void onHideTimer();
+    void updateTrashState();
 
 private:
     void setupView();
@@ -99,6 +104,8 @@ private:
     qreal m_blurRadius = 0;
     QTimer m_hideTimer;
     QTimer m_dragHeartbeat;
+    QTimer m_trashCheckTimer;
+    bool m_trashIsEmpty = true;
 };
 
 #endif

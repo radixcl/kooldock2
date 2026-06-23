@@ -17,15 +17,16 @@
 #include <KWindowEffects>
 #include <KIO/CopyJob>
 
-#include <QDBusInterface>
-#include <QDBusPendingReply>
 #include <QDesktopServices>
+#include <QDir>
 #include <QIcon>
 #include <QPainterPath>
+#include <QProcess>
 #include <QQmlContext>
 #include <QQuickImageProvider>
 #include <QQuickItem>
 #include <QScreen>
+#include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
 
@@ -80,6 +81,10 @@ KoolDock::KoolDock(QObject *parent)
     connect(&m_dragHeartbeat, &QTimer::timeout, this, [this]() {
         setDragActive(false);
     });
+
+    m_trashCheckTimer.setInterval(2000);
+    connect(&m_trashCheckTimer, &QTimer::timeout, this, &KoolDock::updateTrashState);
+    m_trashCheckTimer.start();
 
     m_tasks->start();
 
@@ -221,20 +226,11 @@ void KoolDock::applyLayerShell()
     m_layer->setMargins(margins);
 
     const int bgHeight = KoolDockSettings::dockHeight();
-    // When auto-hide is on, the window stays at full size (so drag-drop
-    // from external apps can hit the surface) but we restrict pointer
-    // input to a narrow trigger strip via setMask / input region.
-    // With an edge margin set (non-zero), use overlay mode (exclusive
-    // zone 0) so the dock doesn't reserve extra space on top of the
-    // taskbar's — it just overlays at the offset position.
     const bool overlay = autoHide() || edgeMargin != 0;
     QSize size(maxDockWidth(), maxDockHeight());
     // During an internal icon drag, expand the window along its short
     // axis so the DragHandler keeps tracking the cursor as the icon moves
-    // outside the dock's visible area. The layer surface is anchored to
-    // the screen edge, so growing the short axis extends the surface
-    // toward the screen center (away from the edge) — the extra area is
-    // transparent and doesn't affect the dock's visible position.
+    // outside the dock's visible area.
     if (m_dragExpanded) {
         constexpr int dragExpandShort = 300;
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
@@ -242,6 +238,20 @@ void KoolDock::applyLayerShell()
             size.rwidth() += dragExpandShort;
         } else {
             size.rheight() += dragExpandShort;
+        }
+    }
+    // Non-autohide and no zoom active: shrink the window's short axis to
+    // just bgHeight so the transparent overflow area doesn't intercept
+    // clicks on windows above/behind the dock. When the cursor enters the
+    // pill zone, setContainsMouse() re-expands to the full max size. This
+    // only applies when no drag is active (drag operations always need the
+    // full surface).
+    if (!autoHide() && !m_dragExpanded && !m_containsMouse && !m_dragActive) {
+        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+        if (vert) {
+            size.setWidth(bgHeight);
+        } else {
+            size.setHeight(bgHeight);
         }
     }
     m_layer->setDesiredSize(size);
@@ -490,29 +500,20 @@ void KoolDock::setContainsMouse(bool contains)
         return;
     }
     m_containsMouse = contains;
-    // macOS-style auto-hide: the dock overlays on top of other windows
-    // (exclusive zone stays 0 — never pushes them) and slides in/out from
-    // the screen edge with a fade. The window is always full-size; when
-    // hidden the pointer input region is restricted to the trigger strip
-    // (so normal mouse movement doesn't wake the dock except at the edge)
-    // while drag-and-drop sees the full surface geometry. When the cursor
-    // bumps the edge, the QML pill animates in (slide + fade). When the
-    // cursor leaves, the QML pill animates out, and after the animation
-    // finishes onHideTimer() restricts the input region again and disables
-    // blur.
     if (m_layer && KoolDockSettings::autoHide()) {
         if (contains) {
-            // Show: cancel any pending hide, open full input region.
-            // Don't call applyBlur() here — QML's updateBlur() fires
-            // immediately (and on every frame of the slide animation)
-            // passing the correct transform-aware position.
             m_hideTimer.stop();
             applyInputMask(false);
         } else {
-            // Hide: start the timer — the QML animation plays during this
-            // delay, then onHideTimer() restricts input and disables blur.
             m_hideTimer.start(200);
         }
+    }
+    // Non-autohide: resize the window to just the pill height when the
+    // cursor is outside, and to the full size (with zoom overflow room)
+    // when the cursor enters. This keeps the transparent overflow area
+    // from intercepting clicks on windows above the dock.
+    if (m_layer && !KoolDockSettings::autoHide() && !m_dragExpanded && !m_dragActive) {
+        applyLayerShell();
     }
     Q_EMIT containsMouseChanged();
 }
@@ -532,14 +533,11 @@ void KoolDock::onHideTimer()
 
 void KoolDock::showAppMenu()
 {
-    // Show the KDE application launcher (Kickoff) via DBus.
-    auto *msg = new QDBusMessage(QDBusMessage::createMethodCall(
-        QStringLiteral("org.kde.plasmashell"),
-        QStringLiteral("/PlasmaShell"),
-        QStringLiteral("org.kde.PlasmaShell"),
-        QStringLiteral("showApplicationLauncher")));
-    QDBusPendingReply<> reply = QDBusConnection::sessionBus().asyncCall(*msg);
-    delete msg;
+    // Open the KDE application launcher (Kickoff).  plasmawindowed shows
+    // the widget in a standalone window on Plasma 6; fall back to krunner
+    // on systems where plasmawindowed isn't installed.
+    QProcess::startDetached(QStringLiteral("plasmawindowed"),
+        {QStringLiteral("org.kde.plasma.kickoff")});
 }
 
 void KoolDock::openTrash()
@@ -557,4 +555,33 @@ void KoolDock::trashFiles(const QVariantList &urls)
     if (!urlList.isEmpty()) {
         KIO::trash(urlList);
     }
+}
+
+bool KoolDock::isTrashEmpty() const
+{
+    const QString trashFiles = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+                               + QStringLiteral("/Trash/files");
+    QDir dir(trashFiles);
+    if (!dir.exists()) return true;
+    return dir.entryInfoList(QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden).isEmpty();
+}
+
+void KoolDock::updateTrashState()
+{
+    const bool empty = isTrashEmpty();
+    if (m_trashIsEmpty != empty) {
+        m_trashIsEmpty = empty;
+        Q_EMIT trashIsEmptyChanged();
+    }
+}
+
+void KoolDock::emptyTrash()
+{
+    const QString trashRoot = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+                              + QStringLiteral("/Trash");
+    QDir(trashRoot + QStringLiteral("/files")).removeRecursively();
+    QDir(trashRoot + QStringLiteral("/info")).removeRecursively();
+    // Recreate the directories so the trash can still receive files.
+    QDir().mkpath(trashRoot + QStringLiteral("/files"));
+    QDir().mkpath(trashRoot + QStringLiteral("/info"));
 }
