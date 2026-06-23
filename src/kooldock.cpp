@@ -167,11 +167,29 @@ void KoolDock::applyLayerShell()
     m_layer->setKeyboardInteractivity(L::KeyboardInteractivityOnDemand);
     m_layer->setScope(QStringLiteral("kooldock2"));
 
-    const int bgHeight = 60;
+    // Edge margin: a negative value pushes the dock past other panels
+    // (e.g. the KDE taskbar) toward the screen edge, so the dock can sit
+    // below the taskbar instead of above it. Applied as a layer-shell
+    // margin on the anchored edge only.
+    const int edgeMargin = KoolDockSettings::edgeMargin();
+    QMargins margins;
+    switch (screenEdge()) {
+    case Qt::BottomEdge: margins.setBottom(edgeMargin); break;
+    case Qt::TopEdge:    margins.setTop(edgeMargin); break;
+    case Qt::LeftEdge:   margins.setLeft(edgeMargin); break;
+    case Qt::RightEdge:  margins.setRight(edgeMargin); break;
+    }
+    m_layer->setMargins(margins);
+
+    const int bgHeight = KoolDockSettings::dockHeight();
     // When auto-hide is on, start hidden: a 2px trigger strip at the edge,
     // no exclusive zone (overlay on top of other windows, macOS-style).
     // setContainsMouse() expands the window to full size when the cursor
-    // enters the strip.
+    // enters the strip. When an edge margin is set (non-zero), also use
+    // overlay mode (exclusive zone 0) so the dock doesn't reserve extra
+    // space on top of the taskbar's — it just overlays at the offset
+    // position.
+    const bool overlay = autoHide() || edgeMargin != 0;
     const int trigger = 2;
     const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
     const QSize visibleSize(maxDockWidth(), maxDockHeight());
@@ -180,9 +198,9 @@ void KoolDock::applyLayerShell()
     const QSize initialSize = autoHide() ? hiddenSize : visibleSize;
     m_layer->setDesiredSize(initialSize);
     if (m_view) m_view->resize(initialSize);
-    m_layer->setExclusiveZone(autoHide() ? 0 : bgHeight);
+    m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
     m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
-    if (!autoHide()) {
+    if (!overlay) {
         switch (screenEdge()) {
         case Qt::BottomEdge: m_layer->setExclusiveEdge(L::AnchorBottom); break;
         case Qt::TopEdge:    m_layer->setExclusiveEdge(L::AnchorTop); break;
@@ -240,7 +258,7 @@ int KoolDock::maxDockShortSize() const
     // The dock's size along its short axis: the pill's fixed bgHeight
     // band, plus enough room on the overflow side to fit the tallest
     // possible icon plus its margin. Same for all four edges.
-    const int bgHeight = 60;
+    const int bgHeight = KoolDockSettings::dockHeight();
     const int needed = KoolDockSettings::iconSpacing() + KoolDockSettings::bigIconSize() + 4;
     return qMax(bgHeight, needed);
 }
@@ -280,7 +298,7 @@ void KoolDock::applyBlur()
         const qreal pos = m_blurPos;
         const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
         const qreal shortOffset = m_blurShortOffset;
-        const int bgHeight = 60;
+        const int bgHeight = KoolDockSettings::dockHeight();
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
         QRectF rect;
         if (vert) {
