@@ -30,8 +30,28 @@ Item {
     property int zoomRange: 5
     property int spacing: 10
     property int zoomDuration: 200
+    property bool showNames: true
+    property int iconPadding: 4
+    property int taskDotSize: 4
+    property color taskDotColor: "#aaffffff"
+    property real taskDotOpacity: 0.6
+    property int tooltipDelay: 500
+    property int tooltipTimeout: 2000
+    property int tooltipSize: 12
+    property bool tooltipBold: false
+    property bool tooltipItalic: false
+    property string tooltipFont: "Sans Serif"
+    property color tooltipColor: "#f1f1f1"
 
     clip: false
+
+    // Drag-and-drop state: which item is being dragged and its current
+    // position along the long axis. Used to reorder icons in real time as
+    // the dragged item passes over neighbours, and to detect drag-out for
+    // removal.
+    property int dragIndex: -1
+    property real dragPos: 0
+    property bool dragOutside: false
 
     ListModel { id: listModel }
 
@@ -146,6 +166,7 @@ Item {
     Repeater {
         model: listModel
         delegate: DockItem {
+            id: delegateItem
             name: model.name
             iconName: model.iconName
             isTask: model.isTask
@@ -157,6 +178,18 @@ Item {
             containsMouse: bar.containsMouse
             maxIconSize: bar.bigSize
             zoomDuration: bar.zoomDuration
+            showNames: bar.showNames
+            iconPadding: bar.iconPadding
+            taskDotSize: bar.taskDotSize
+            taskDotColor: bar.taskDotColor
+            taskDotOpacity: bar.taskDotOpacity
+            tooltipDelay: bar.tooltipDelay
+            tooltipTimeout: bar.tooltipTimeout
+            tooltipSize: bar.tooltipSize
+            tooltipBold: bar.tooltipBold
+            tooltipItalic: bar.tooltipItalic
+            tooltipFont: bar.tooltipFont
+            tooltipColor: bar.tooltipColor
 
             onActivated: {
                 if (bar.kooldock && bar.kooldock.model)
@@ -171,6 +204,88 @@ Item {
                     bar.kooldock.windowActions.currentWindow = model.windowId
                     menu.popup(pt)
                 }
+            }
+
+            // Drag-and-drop: notify the bar when a drag starts, moves, or
+            // ends. The bar handles reordering (drag within the dock) and
+            // removal (drag outside the dock) with the poof animation.
+            onDragStarted: (idx) => {
+                bar.dragIndex = idx
+                bar.dragOutside = false
+            }
+            onDragMoved: (pos) => {
+                bar.dragPos = pos
+                // Check if the drag has left the dock bounds.
+                const barPos = bar.mapToItem(null, 0, 0)
+                const barScenePos = vertical ? barPos.y : barPos.x
+                const barLen = vertical ? bar.height : bar.width
+                bar.dragOutside = (pos < barScenePos - 20) || (pos > barScenePos + barLen + 20)
+            }
+            onDragEnded: (idx, pos, outside) => {
+                if (bar.dragIndex < 0) return
+                if (bar.dragOutside) {
+                    // Dragged out of the dock: play poof, then remove.
+                    delegateItem.playDestroyAnimation()
+                    removeTimer.idx = bar.dragIndex
+                    removeTimer.start()
+                } else {
+                    // Dropped inside: reorder — find the target position
+                    // and tell the C++ model to move the launcher.
+                    const barPos = bar.mapToItem(null, 0, 0)
+                    const barScenePos = vertical ? barPos.y : barPos.x
+                    const relPos = pos - barScenePos
+                    // Find which icon slot the drop lands on.
+                    let targetIdx = -1
+                    for (let i = 0; i < listModel.count; i++) {
+                        const ipos = listModel.get(i).ipos
+                        const isz = listModel.get(i).sz
+                        if (relPos < ipos + isz / 2) { targetIdx = i; break }
+                    }
+                    if (targetIdx < 0) targetIdx = listModel.count - 1
+                    if (targetIdx !== bar.dragIndex && targetIdx >= 0) {
+                        if (bar.kooldock && bar.kooldock.model)
+                            bar.kooldock.model.moveLauncher(bar.dragIndex, targetIdx)
+                    }
+                }
+                bar.dragIndex = -1
+                bar.dragOutside = false
+            }
+        }
+    }
+
+    // Timer to delay the actual model removal until the poof animation
+    // has played. The index is stashed in a custom property.
+    Timer {
+        id: removeTimer
+        property int idx: -1
+        interval: 450
+        onTriggered: {
+            if (idx >= 0 && bar.kooldock && bar.kooldock.model)
+                bar.kooldock.model.removeLauncher(idx)
+            idx = -1
+        }
+    }
+
+    // DropArea: accept external .desktop file drops to add launchers.
+    // This covers dragging a .desktop file from the file manager onto
+    // the dock.
+    DropArea {
+        anchors.fill: parent
+        enabled: true
+        keys: ["text/uri-list"]
+
+        onDropped: (drop) => {
+            if (drop.hasUrls) {
+                const urls = drop.urls
+                for (let i = 0; i < urls.length; i++) {
+                    const url = urls[i]
+                    if (url.toString().endsWith(".desktop")) {
+                        const localFile = url.toLocalFile()
+                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
+                            bar.kooldock.model.addLauncher(localFile)
+                    }
+                }
+                drop.accept()
             }
         }
     }

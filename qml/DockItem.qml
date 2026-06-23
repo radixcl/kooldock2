@@ -13,17 +13,38 @@ Item {
     property real itemPos: 0
     property int edge: Qt.BottomEdge
     property bool containsMouse: false
-    // The biggest itemSize this icon will ever be asked to render at
-    // (DockBar's bigSize). Used to request the icon pixmap once, instead of
-    // re-requesting it from the icon theme on every animation frame.
     property int maxIconSize: 80
     property int zoomDuration: 200
+    property bool showNames: true
+    property int iconPadding: 4
+    property int taskDotSize: 4
+    property color taskDotColor: "#aaffffff"
+    property real taskDotOpacity: 0.6
+    property int tooltipDelay: 500
+    property int tooltipTimeout: 2000
+    property int tooltipSize: 12
+    property bool tooltipBold: false
+    property bool tooltipItalic: false
+    property string tooltipFont: "Sans Serif"
+    property color tooltipColor: "#f1f1f1"
+
+    // Drag-and-drop state. When dragging, the item is lifted (scale +
+    // shadow), follows the cursor, and the bar handles reordering or
+    // removal on release.
+    property bool dragging: false
+    property bool dragActive: false
+    property real dragOffsetX: 0
+    property real dragOffsetY: 0
+    property bool beingDestroyed: false
 
     signal activated()
     signal contextMenuRequested(var pt)
+    signal dragStarted(int index)
+    signal dragMoved(real pos)
+    signal dragEnded(int index, real pos, bool outsideDock)
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
-    readonly property real iconPad: 4
+    readonly property real iconPad: iconPadding
 
     width:  itemSize
     height: itemSize
@@ -33,13 +54,43 @@ Item {
     // TopEdge at the top growing downward; on LeftEdge at the left growing
     // rightward; on RightEdge at the right growing leftward — the zoom
     // overflow always extends away from the screen edge.
-    x: vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos
-    y: vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))
+    // When dragging, the icon follows the cursor via dragOffset.
+    x: (vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos) + dragOffsetX
+    y: (vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))) + dragOffsetY
 
     Behavior on width  { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
     Behavior on height { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
-    Behavior on x      { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
-    Behavior on y      { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on x      { enabled: !dragActive; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on y      { enabled: !dragActive; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+
+    // Lift effect while dragging: scale up slightly + drop shadow.
+    // beingDestroyed drives the poof scale-down via destroyScale.
+    QtObject {
+        id: destroyScale
+        property real scale: 1.0
+    }
+    scale: dragActive ? 1.3 : (beingDestroyed ? destroyScale.scale : 1.0)
+    transformOrigin: Item.Center
+
+    Behavior on scale {
+        enabled: !beingDestroyed
+        NumberAnimation { duration: 200; easing.type: Easing.OutBack }
+    }
+
+    // Drop shadow that appears on lift.
+    Rectangle {
+        id: shadow
+        anchors.centerIn: parent
+        width: parent.width * 0.9; height: parent.height * 0.9
+        radius: width / 2
+        color: "#66000000"
+        opacity: dragActive ? 0.5 : 0.0
+        scale: dragActive ? 1.1 : 0.8
+        z: -1
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        Behavior on scale   { NumberAnimation { duration: 150 } }
+        visible: opacity > 0.01
+    }
 
     MouseArea {
         id: ma
@@ -48,6 +99,7 @@ Item {
         cursorShape: Qt.PointingHandCursor
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: mouse => {
+            if (dragActive) return
             if (mouse.button === Qt.RightButton)
                 item.contextMenuRequested(mapToItem(null, mouse.x, mouse.y))
             else
@@ -55,16 +107,48 @@ Item {
         }
     }
 
+    // DragHandler: starts on press+move (after a small threshold so
+    // clicks aren't interpreted as drags). Only launchers are draggable
+    // — tasks come and go with windows and can't be reordered.
+    DragHandler {
+        id: dragHandler
+        target: null
+        acceptedButtons: Qt.LeftButton
+        enabled: !isTask && !beingDestroyed
+        dragThreshold: 8
+
+        onActiveChanged: {
+            if (dragHandler.active) {
+                item.dragActive = true
+                item.dragStarted(modelIndex)
+            } else if (item.dragActive) {
+                const pos = vertical ? dragHandler.centroid.scenePosition.y : dragHandler.centroid.scenePosition.x
+                item.dragActive = false
+                item.dragOffsetX = 0
+                item.dragOffsetY = 0
+                item.dragEnded(modelIndex, pos, false)
+            }
+        }
+
+        onCentroidChanged: {
+            if (dragHandler.active && item.dragActive) {
+                // Follow the cursor: offset from the item's rest position
+                // to where the drag centroid is, in parent coordinates.
+                const scenePos = dragHandler.centroid.scenePosition
+                const parentPos = item.mapToItem(parent, 0, 0)
+                const targetX = scenePos.x - parentPos.x - itemSize / 2
+                const targetY = scenePos.y - parentPos.y - itemSize / 2
+                item.dragOffsetX = targetX - (vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos)
+                item.dragOffsetY = targetY - (vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize)))
+                const pos = vertical ? scenePos.y : scenePos.x
+                item.dragMoved(pos)
+            }
+        }
+    }
+
     Image {
         anchors.centerIn: parent
         readonly property real maxDim: Math.min(parent.width, parent.height) - iconPad * 2
-        // Display size tracks the zoom continuously, but sourceSize is
-        // fixed: the image provider re-renders the icon from the theme on
-        // every sourceSize change, so binding it to maxDim (which changes
-        // every animation frame) was firing a flood of async re-renders
-        // mid-zoom — visible as a flicker while loads raced/landed out of
-        // order. Requesting the largest size once and letting Image scale
-        // it down smoothly avoids re-fetching at all.
         width: maxDim; height: maxDim
         source: item.iconName.length > 0 ? ("image://kicon/" + item.iconName) : "image://kicon/application-x-executable"
         sourceSize.width: maxIconSize; sourceSize.height: maxIconSize
@@ -73,19 +157,121 @@ Item {
     }
 
     Rectangle {
-        // Task indicator dot: sits on the edge side of the icon, centered
-        // along the long axis. Positioned with x/y (no dynamic anchors —
-        // see Main.qml's bg for why).
         x: vertical ? (edge === Qt.LeftEdge ? 2 : (parent.width - width - 2))
                     : (parent.width - width) / 2
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
-        width: 4; height: 4; radius: 2
-        color: "#aaffffff"; visible: isTask; opacity: 0.6
+        width: taskDotSize; height: taskDotSize; radius: taskDotSize / 2
+        color: taskDotColor; visible: isTask; opacity: taskDotOpacity
     }
 
     ToolTip {
-        visible: ma.containsMouse && item.name.length > 0
-        text: item.name; delay: 500; timeout: 2000
+        visible: showNames && ma.containsMouse && item.name.length > 0 && !dragActive
+        text: item.name
+        delay: tooltipDelay; timeout: tooltipTimeout
+        contentItem: Text {
+            text: item.name
+            font.family: tooltipFont
+            font.pixelSize: tooltipSize
+            font.bold: tooltipBold
+            font.italic: tooltipItalic
+            color: tooltipColor
+        }
+    }
+
+    // Poof burst: expanding ring + particles.
+    Item {
+        id: poofContainer
+        anchors.centerIn: parent
+        visible: false
+        z: 100
+
+        function start() {
+            visible = true
+            poofRing.opacity = 0.8
+            poofRing.scale = 0.3
+            poofRingAnim.start()
+            for (let i = 0; i < particleRepeater.count; i++) {
+                particleRepeater.itemAt(i).start()
+            }
+            poofHideTimer.start()
+        }
+
+        Timer {
+            id: poofHideTimer
+            interval: 500
+            onTriggered: poofContainer.visible = false
+        }
+
+        // Expanding ring
+        Rectangle {
+            id: poofRing
+            anchors.centerIn: parent
+            width: 48; height: 48
+            radius: 24
+            color: "transparent"
+            border.color: "#ccffffff"
+            border.width: 2
+            opacity: 0
+            scale: 0.3
+
+            ParallelAnimation {
+                id: poofRingAnim
+                NumberAnimation { target: poofRing; property: "scale"; from: 0.3; to: 2.0; duration: 400; easing.type: Easing.OutQuad }
+                NumberAnimation { target: poofRing; property: "opacity"; from: 0.8; to: 0.0; duration: 400; easing.type: Easing.OutQuad }
+            }
+        }
+
+        // Particle burst — 8 small dots flying outward in all directions.
+        Repeater {
+            id: particleRepeater
+            model: 8
+            delegate: Rectangle {
+                id: particle
+                required property int index
+                anchors.centerIn: parent
+                width: 4; height: 4
+                radius: 2
+                color: "#ffffff"
+                opacity: 0
+                scale: 1
+
+                readonly property real angle: index * 45
+                readonly property real distance: 42
+
+                function start() {
+                    const rad = angle * Math.PI / 180
+                    const tx = Math.cos(rad) * distance
+                    const ty = Math.sin(rad) * distance
+                    pxAnim.to = tx
+                    pyAnim.to = ty
+                    particleAnim.start()
+                }
+
+                ParallelAnimation {
+                    id: particleAnim
+                    NumberAnimation { id: pxAnim; target: particle; property: "x"; from: 0; to: 0; duration: 400; easing.type: Easing.OutQuad }
+                    NumberAnimation { id: pyAnim; target: particle; property: "y"; from: 0; to: 0; duration: 400; easing.type: Easing.OutQuad }
+                    NumberAnimation { target: particle; property: "opacity"; from: 1.0; to: 0.0; duration: 400; easing.type: Easing.OutQuad }
+                    NumberAnimation { target: particle; property: "scale"; from: 1.0; to: 0.2; duration: 400; easing.type: Easing.OutQuad }
+                }
+            }
+        }
+    }
+
+    function playDestroyAnimation() {
+        beingDestroyed = true
+        destroyScale.scale = 1.3
+        poofContainer.start()
+        destroyAnim.start()
+    }
+
+    SequentialAnimation {
+        id: destroyAnim
+        ParallelAnimation {
+            NumberAnimation { target: destroyScale; property: "scale"; from: 1.3; to: 0.0; duration: 400; easing.type: Easing.InQuad }
+            NumberAnimation { target: item; property: "opacity"; from: 1.0; to: 0.0; duration: 400; easing.type: Easing.InQuad }
+            NumberAnimation { target: item; property: "rotation"; from: 0; to: vertical ? 180 : -180; duration: 400; easing.type: Easing.OutQuad }
+        }
     }
 }

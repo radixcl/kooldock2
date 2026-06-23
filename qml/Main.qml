@@ -17,13 +17,31 @@ Item {
     readonly property int spacing: settings ? settings.iconSpacing : 10
     readonly property int zoomDuration: settings ? settings.zoomSpeed : 200
     readonly property int count: kooldock && kooldock.model ? kooldock.model.count : 0
+    readonly property real bgOpacity: settings ? settings.backgroundOpacity / 100 : 0.7
+    readonly property color bgColor: settings ? settings.backgroundColor : "#1e1e2e"
+    readonly property int cornerRadius: settings ? settings.cornerRadius : 18
+    readonly property bool showBorders: settings ? settings.showBorders : false
+    readonly property color borderColor: settings ? settings.borderColor : "#b1c4de"
+    readonly property real borderWidth: settings ? settings.borderWidth : 0.5
+    readonly property bool showNames: settings ? settings.showNames : true
+    readonly property int iconPadding: settings ? settings.iconPadding : 4
+    readonly property int taskDotSize: settings ? settings.taskIndicatorSize : 4
+    readonly property color taskDotColor: settings ? settings.taskIndicatorColor : "#aaffffff"
+    readonly property real taskDotOpacity: settings ? settings.taskIndicatorOpacity : 0.6
+    readonly property int tooltipDelay: settings ? settings.tooltipDelay : 500
+    readonly property int tooltipTimeout: settings ? settings.tooltipTimeout : 2000
+    readonly property int tooltipSize: settings ? settings.tooltipSize : 12
+    readonly property bool tooltipBold: settings ? settings.tooltipBold : false
+    readonly property bool tooltipItalic: settings ? settings.tooltipItalic : false
+    readonly property string tooltipFont: settings ? settings.tooltipFont : "Sans Serif"
+    readonly property color tooltipColor: settings ? settings.tooltipColor : "#f1f1f1"
 
     // Dock geometry along its long and short axes. The long axis is the one
     // icons lay out on (horizontal for Top/BottomEdge, vertical for
     // Left/RightEdge); the short axis is the pill's fixed bgHeight band.
     readonly property int longContentLength: count > 0 ? (spacing + count * (smallSize + spacing)) : 500
     readonly property int longSize: Math.max(longContentLength + 32, 64)
-    readonly property int bgHeight: 60
+    readonly property int bgHeight: settings ? settings.dockHeight : 60
     readonly property int shortSize: Math.max(bgHeight, spacing + bigSize + 4)
     // Window dimensions swap with orientation: horizontal edges get a wide
     // short window; vertical edges get a narrow tall one. Mirrors
@@ -43,6 +61,30 @@ Item {
     HoverHandler { id: hoverHandler }
     readonly property bool containsMouse: dockBar.containsMouse
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
+
+    // When auto-hide is on and the dock is hidden (2px trigger strip),
+    // a drag-and-drop from another app (e.g. dragging a .desktop file
+    // from Dolphin) doesn't generate hover events — Wayland drag
+    // operations don't fire enter/leave like a normal cursor. This
+    // DropArea covers the full window (even at 2px) and expands the dock
+    // on drag-enter so the user can drop onto the now-visible dock. The
+    // actual file drop is handled by DockBar's own DropArea.
+    DropArea {
+        anchors.fill: parent
+        enabled: autoHide
+        keys: ["text/uri-list"]
+        onEntered: (drop) => {
+            if (kooldock) kooldock.setContainsMouse(true)
+        }
+        onPositionChanged: (drop) => {
+            // Keep the dock alive while the drag moves over it.
+            if (kooldock) kooldock.setContainsMouse(true)
+        }
+        onDropped: (drop) => {
+            // Let DockBar's DropArea handle the actual drop — just keep
+            // the dock visible here. Don't accept so the event propagates.
+        }
+    }
 
     // macOS glass background — transparent, blur via KWindowEffects.
     // The pill hugs the icons' current (possibly zoomed) total span along
@@ -66,10 +108,10 @@ Item {
                     : (parent.width - width) / 2
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 0 : (parent.height - height))
-        radius: 18
-        color: "#1affffff"
-        border.color: "#33ffffff"
-        border.width: 0.5
+        radius: root.cornerRadius
+        color: Qt.rgba(root.bgColor.r, root.bgColor.g, root.bgColor.b, root.bgOpacity)
+        border.color: root.borderColor
+        border.width: root.showBorders ? root.borderWidth : 0
         clip: false
 
         opacity: autoHide ? (containsMouse ? 1.0 : 0.0) : 1.0
@@ -147,6 +189,18 @@ Item {
             zoomRange: root.zoomRange
             spacing: root.spacing
             zoomDuration: root.zoomDuration
+            showNames: root.showNames
+            iconPadding: root.iconPadding
+            taskDotSize: root.taskDotSize
+            taskDotColor: root.taskDotColor
+            taskDotOpacity: root.taskDotOpacity
+            tooltipDelay: root.tooltipDelay
+            tooltipTimeout: root.tooltipTimeout
+            tooltipSize: root.tooltipSize
+            tooltipBold: root.tooltipBold
+            tooltipItalic: root.tooltipItalic
+            tooltipFont: root.tooltipFont
+            tooltipColor: root.tooltipColor
             windowExtent: vertical ? root.height : root.width
             // Once the pointer leaves the window, point.position freezes at
             // its last value and never changes again, so nothing would
