@@ -6,6 +6,7 @@
 #include "item.h"
 #include "kooldocksettings.h"
 #include "launcheritems.h"
+#include "unitylauncherwatcher.h"
 #include "windowtasks.h"
 
 #include <KDesktopFile>
@@ -24,9 +25,11 @@
 DockModel::DockModel(WindowTasks *tasks, QObject *parent)
     : QAbstractListModel(parent)
     , m_launchers(new LauncherItems(this))
+    , m_launcherWatcher(new UnityLauncherWatcher(this))
     , m_tasks(tasks)
 {
     connect(m_launchers, &LauncherItems::changed, this, &DockModel::onLaunchersChanged);
+    connect(m_launcherWatcher, &UnityLauncherWatcher::badgeChanged, this, &DockModel::onBadgeChanged);
     rebuild();
 }
 
@@ -137,6 +140,14 @@ void DockModel::newWindow(int row)
 
 void DockModel::reload()
 {
+    // onWindowAdded() below can emit the granular itemInserted/itemChanged
+    // signals as a side effect (fusing or inserting a task) — while m_items
+    // is only partially rebuilt here, that's signals (and the eventual
+    // itemsChanged trailer's partialUpdateHandled suppression) referring to
+    // rows that don't match the final, post-reload state yet. Block them
+    // until the rebuild below is complete and this function emits its own.
+    m_loading = true;
+
     m_items.clear();
     m_taskItems.clear();
 
@@ -163,6 +174,8 @@ void DockModel::reload()
         QStringLiteral("Trash"), QStringLiteral("user-trash"),
         QString(), 0);
     m_items.append(trashItem);
+
+    m_loading = false;
 
     beginResetModel();
     endResetModel();
@@ -198,8 +211,11 @@ int DockModel::insertTaskSorted(Item *item)
     m_items.insert(insertAt, item);
     endInsertRows();
     updateIndices();
-    Q_EMIT countChanged();
-    Q_EMIT itemsChanged();
+    if (!m_loading) {
+        Q_EMIT itemInserted(insertAt);
+        Q_EMIT countChanged();
+        Q_EMIT itemsChanged();
+    }
     return insertAt;
 }
 
@@ -280,14 +296,18 @@ void DockModel::onWindowAdded(quint64 windowId)
         m_taskItems.insert(windowId, launcher);
         const int row = m_items.indexOf(launcher);
         if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
-        Q_EMIT countChanged();
-        Q_EMIT itemsChanged();
+        if (!m_loading) {
+            if (row >= 0) Q_EMIT itemChanged(row);
+            Q_EMIT countChanged();
+            Q_EMIT itemsChanged();
+        }
         return;
     }
 
     auto *item = new Item(Item::Kind::Task, data.title, data.iconName, QString(), windowId);
     item->setMinimized(data.minimized);
     item->setActive(data.active);
+    item->setAppId(data.appId);
     m_taskItems.insert(windowId, item);
     insertTaskSorted(item);
     qDebug() << "  inserted, count=" << m_items.size();
@@ -306,7 +326,10 @@ void DockModel::onWindowRemoved(quint64 windowId)
         item->setActive(false);
         item->setMinimized(false);
         const int row = m_items.indexOf(item);
-        if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+        if (row >= 0) {
+            Q_EMIT dataChanged(index(row), index(row));
+            Q_EMIT itemChanged(row);
+        }
         Q_EMIT countChanged();
         Q_EMIT itemsChanged();
         return;
@@ -318,6 +341,7 @@ void DockModel::onWindowRemoved(quint64 windowId)
         m_items.removeAt(row);
         endRemoveRows();
         updateIndices();
+        Q_EMIT itemRemoved(row);
         Q_EMIT countChanged();
         Q_EMIT itemsChanged();
     }
@@ -345,7 +369,15 @@ void DockModel::onWindowChanged(quint64 windowId)
     }
 
     const int row = m_items.indexOf(item);
-    if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+    if (row >= 0) {
+        Q_EMIT dataChanged(index(row), index(row));
+        // Title/icon often arrive blank on window creation and get filled
+        // in here moments later (common on Wayland) — without this, the
+        // dock keeps showing the stale/generic icon since nothing else
+        // necessarily touches this row afterwards.
+        Q_EMIT itemChanged(row);
+        Q_EMIT itemsChanged();
+    }
 }
 
 void DockModel::onActiveWindowChanged(quint64 windowId)
@@ -445,6 +477,7 @@ void DockModel::moveLauncher(int from, int to)
     m_items.move(from, to);
     endMoveRows();
     updateIndices();
+    Q_EMIT itemMoved(from, to);
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
 }
@@ -504,7 +537,18 @@ Item *DockModel::findLauncherForAppId(const QString &appId) const
         QString s = exec;
         s.remove(QRegularExpression(QStringLiteral("%[a-zA-Z]")));
         const QString first = s.section(QLatin1Char(' '), 0, 0);
-        return QFileInfo(first).fileName();
+        const QString firstName = QFileInfo(first).fileName();
+        // Flatpak-wrapped apps all launch via "flatpak run ... --command=<bin>
+        // ...", so the literal first token is always "flatpak" — every
+        // Flatpak app would otherwise collapse to the same identifier and
+        // falsely match each other (e.g. Telegram fusing with LibreWolf's
+        // launcher). Pull out the real command instead.
+        if (firstName == QStringLiteral("flatpak")) {
+            const QRegularExpression cmdRe(QStringLiteral("--command=(\\S+)"));
+            const auto match = cmdRe.match(s);
+            if (match.hasMatch()) return match.captured(1);
+        }
+        return firstName;
     };
 
     // Resolve the appId to the installed .desktop service so we can get
@@ -556,7 +600,34 @@ QVariantMap DockModel::itemData(int row) const
         {QStringLiteral("isRunning"), item->isRunning()},
         {QStringLiteral("windowId"), item->windowId()},
         {QStringLiteral("itemIndex"), item->itemIndex()},
+        {QStringLiteral("badgeCount"), item->badgeCount()},
     };
+}
+
+void DockModel::onBadgeChanged(const QString &desktopId, int count, bool visible)
+{
+    const int badge = visible ? count : 0;
+
+    // Try a pinned/fused launcher first (reuses the same fuzzy appId<->Exec
+    // matching used to fuse running windows with their launcher).
+    Item *target = findLauncherForAppId(desktopId);
+    if (!target) {
+        // Fall back to a standalone task matching by its own appId.
+        for (Item *it : m_items) {
+            if (it->isTask() && it->appId().compare(desktopId, Qt::CaseInsensitive) == 0) {
+                target = it;
+                break;
+            }
+        }
+    }
+    if (!target || target->badgeCount() == badge) return;
+
+    target->setBadgeCount(badge);
+    const int row = m_items.indexOf(target);
+    if (row >= 0) {
+        Q_EMIT itemChanged(row);
+        Q_EMIT itemsChanged();
+    }
 }
 
 QHash<int, QByteArray> DockModel::roleNames() const

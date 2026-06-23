@@ -12,6 +12,7 @@
 
 class Item;
 class LauncherItems;
+class UnityLauncherWatcher;
 
 #include "windowtasks.h"
 
@@ -54,11 +55,15 @@ Q_SIGNALS:
     void countChanged();
     void itemsChanged();
     void itemRemoved(int row);
+    void itemChanged(int row);
+    void itemInserted(int row);
+    void itemMoved(int from, int to);
     void activateAppMenu();
     void activateTrash();
 
 private Q_SLOTS:
     void onLaunchersChanged();
+    void onBadgeChanged(const QString &desktopId, int count, bool visible);
 
 private:
     void rebuild();
@@ -71,9 +76,11 @@ private:
     QList<Item *> m_items;
     QHash<quint64, Item *> m_taskItems;
     LauncherItems *m_launchers;
+    UnityLauncherWatcher *m_launcherWatcher;
     WindowTasks *m_tasks = nullptr;
     quint64 m_activeWindow = 0;
     bool m_suppressReload = false;
+    bool m_loading = false;
 };
 
 #endif

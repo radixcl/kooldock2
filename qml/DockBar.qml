@@ -118,7 +118,7 @@ Item {
             listModel.append({name: d.name, iconName: d.iconName, isTask: d.isTask,
                              isLauncher: d.isLauncher, isAppMenu: d.isAppMenu, isTrash: d.isTrash,
                              isRunning: d.isRunning, windowId: d.windowId, itemIndex: d.itemIndex,
-                             sz: smallSize, ipos: 0})
+                             badgeCount: d.badgeCount, sz: smallSize, ipos: 0})
         }
         layout()
     }
@@ -224,9 +224,25 @@ Item {
         }
     }
 
+    // Set by onItemRemoved/onItemChanged/onItemInserted/onItemMoved once
+    // they've already applied their update to listModel in place. Each of
+    // those is always followed by itemsChanged (see dockmodel.cpp) —
+    // without this guard, that itemsChanged would immediately call
+    // refreshItems(), clearing and rebuilding the whole list. New
+    // delegates start out at itemPos 0 before layout() lands them, so the
+    // rebuild made every icon visibly fly in from the left instead of
+    // just sliding over to fill a gap/make room, updating in place (e.g.
+    // an icon's running-task dot toggling when its window opens/closes —
+    // the common case for pinned launchers, which doesn't touch row
+    // count at all), or reordering on an internal drag.
+    property bool partialUpdateHandled: false
+
     Connections {
         target: kooldock && kooldock.model ? kooldock.model : null
-        function onItemsChanged() { bar.refreshItems() }
+        function onItemsChanged() {
+            if (bar.partialUpdateHandled) { bar.partialUpdateHandled = false; return }
+            bar.refreshItems()
+        }
         function onCountChanged() {
             // If count went down by one, itemRemoved already handled it.
             // For other cases (reload, settings change), do a full refresh.
@@ -243,6 +259,61 @@ Item {
                     listModel.setProperty(i, "itemIndex", d.itemIndex)
                 }
                 bar.layout()
+                bar.partialUpdateHandled = true
+            }
+        }
+        function onItemChanged(row) {
+            // A single item's properties changed in place (fuse/unfuse on
+            // window open/close) — row count is unaffected, so just patch
+            // that one row's fields instead of rebuilding every delegate.
+            if (row >= 0 && row < listModel.count) {
+                const d = bar.kooldock.model.itemData(row)
+                listModel.setProperty(row, "name", d.name)
+                listModel.setProperty(row, "iconName", d.iconName)
+                listModel.setProperty(row, "isTask", d.isTask)
+                listModel.setProperty(row, "isLauncher", d.isLauncher)
+                listModel.setProperty(row, "isAppMenu", d.isAppMenu)
+                listModel.setProperty(row, "isTrash", d.isTrash)
+                listModel.setProperty(row, "isRunning", d.isRunning)
+                listModel.setProperty(row, "windowId", d.windowId)
+                listModel.setProperty(row, "itemIndex", d.itemIndex)
+                listModel.setProperty(row, "badgeCount", d.badgeCount)
+                bar.partialUpdateHandled = true
+            }
+        }
+        function onItemInserted(row) {
+            // A new task icon appeared (window opened for an app that
+            // isn't already a pinned launcher) — insert just that row so
+            // existing icons slide over to make room instead of every
+            // delegate being torn down and rebuilt.
+            if (row >= 0 && row <= listModel.count) {
+                const d = bar.kooldock.model.itemData(row)
+                listModel.insert(row, {name: d.name, iconName: d.iconName, isTask: d.isTask,
+                                  isLauncher: d.isLauncher, isAppMenu: d.isAppMenu, isTrash: d.isTrash,
+                                  isRunning: d.isRunning, windowId: d.windowId, itemIndex: d.itemIndex,
+                                  badgeCount: d.badgeCount, sz: smallSize, ipos: 0})
+                // Refresh itemIndex for the items shifted after the new one.
+                for (let i = row + 1; i < listModel.count; i++) {
+                    const dd = bar.kooldock.model.itemData(i)
+                    listModel.setProperty(i, "itemIndex", dd.itemIndex)
+                }
+                bar.layout()
+                bar.partialUpdateHandled = true
+            }
+        }
+        function onItemMoved(from, to) {
+            // Drag-to-reorder within the dock — same row count, just a
+            // different order, so move the one row instead of rebuilding.
+            if (from >= 0 && from < listModel.count && to >= 0 && to < listModel.count && from !== to) {
+                listModel.move(from, to, 1)
+                const lo = Math.min(from, to)
+                const hi = Math.max(from, to)
+                for (let i = lo; i <= hi; i++) {
+                    const d = bar.kooldock.model.itemData(i)
+                    listModel.setProperty(i, "itemIndex", d.itemIndex)
+                }
+                bar.layout()
+                bar.partialUpdateHandled = true
             }
         }
     }
@@ -302,6 +373,7 @@ Item {
             isTrash: model.isTrash
             isRunning: model.isRunning
             windowId: model.windowId
+            badgeCount: model.badgeCount
             modelIndex: model.itemIndex
             itemSize: model.sz
             itemPos: model.ipos

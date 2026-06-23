@@ -13,6 +13,8 @@ add_executable(kooldock2
     waylandwindowtasks.h
     windowactions.cpp
     windowactions.h
+    unitylauncherwatcher.cpp
+    unitylauncherwatcher.h
 )
 
 kconfig_add_kcfg_files(kooldock2 GENERATE_MOC kooldocksettings.kcfgc)
@@ -43,6 +45,7 @@ target_include_directories(kooldock2 PRIVATE
 
 target_link_libraries(kooldock2 PRIVATE
     Qt6::Core
+    Qt6::DBus
     Qt6::Gui
     Qt6::Quick
     Qt6::QuickControls2

@@ -12,6 +12,7 @@ Item {
     property bool isTrash: false
     property bool isRunning: false
     property var windowId: 0
+    property int badgeCount: 0
     property int modelIndex: -1
     property real itemSize: 48
     property real itemPos: 0
@@ -228,6 +229,35 @@ Item {
                     : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
         width: taskDotSize; height: taskDotSize; radius: taskDotSize / 2
         color: taskDotColor; visible: (isTask || isRunning) && !isAppMenu && !isTrash; opacity: taskDotOpacity
+    }
+
+    // Notification badge (unread count via the Unity LauncherEntry DBus
+    // API — Telegram, Betterbird, etc.). Always top-right of the icon,
+    // independent of dock edge: that's the universal badge convention
+    // every taskbar/dock uses, unlike the task dot above which hugs
+    // whichever side faces away from the screen edge.
+    Rectangle {
+        id: badge
+        readonly property real d: Math.max(14, item.itemSize * 0.32)
+        visible: badgeCount > 0
+        width: Math.max(d, badgeText.implicitWidth + 6)
+        height: d
+        radius: height / 2
+        color: "#e74c3c"
+        border.color: "#33000000"
+        border.width: 1
+        x: parent.width - width * 0.7
+        y: -height * 0.3
+        z: 10
+
+        Text {
+            id: badgeText
+            anchors.centerIn: parent
+            text: badgeCount > 99 ? "99+" : String(badgeCount)
+            color: "white"
+            font.pixelSize: badge.height * 0.62
+            font.bold: true
+        }
     }
 
     // Custom in-scene tooltip (macOS-style). Rendered as a child of this

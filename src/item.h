@@ -14,6 +14,7 @@ class Item : public QObject
     Q_PROPERTY(QString iconName READ iconName WRITE setIconName NOTIFY iconNameChanged)
     Q_PROPERTY(QString command READ command WRITE setCommand NOTIFY commandChanged)
     Q_PROPERTY(QString desktopFile READ desktopFile WRITE setDesktopFile NOTIFY desktopFileChanged)
+    Q_PROPERTY(QString appId READ appId WRITE setAppId NOTIFY appIdChanged)
     Q_PROPERTY(quint64 windowId READ windowId WRITE setWindowId NOTIFY windowIdChanged)
     Q_PROPERTY(bool isLauncher READ isLauncher CONSTANT)
     Q_PROPERTY(bool isTask READ isTask CONSTANT)
@@ -23,6 +24,7 @@ class Item : public QObject
     Q_PROPERTY(bool isMinimized READ isMinimized WRITE setMinimized NOTIFY isMinimizedChanged)
     Q_PROPERTY(bool isRunning READ isRunning WRITE setRunning NOTIFY isRunningChanged)
     Q_PROPERTY(int itemIndex READ itemIndex WRITE setItemIndex NOTIFY itemIndexChanged)
+    Q_PROPERTY(int badgeCount READ badgeCount WRITE setBadgeCount NOTIFY badgeCountChanged)
 
 public:
     enum class Kind { Launcher, Task, AppMenu, Trash };
@@ -36,6 +38,7 @@ public:
     QString iconName() const { return m_iconName; }
     QString command() const { return m_command; }
     QString desktopFile() const { return m_desktopFile; }
+    QString appId() const { return m_appId; }
     quint64 windowId() const { return m_windowId; }
     bool isTask() const { return m_kind == Kind::Task; }
     bool isLauncher() const { return m_kind == Kind::Launcher; }
@@ -45,27 +48,32 @@ public:
     bool isMinimized() const { return m_isMinimized; }
     bool isRunning() const { return m_isRunning; }
     int itemIndex() const { return m_itemIndex; }
+    int badgeCount() const { return m_badgeCount; }
 
     void setName(const QString &n) { if (m_name != n) { m_name = n; Q_EMIT nameChanged(); } }
     void setIconName(const QString &n) { if (m_iconName != n) { m_iconName = n; Q_EMIT iconNameChanged(); } }
     void setCommand(const QString &c) { if (m_command != c) { m_command = c; Q_EMIT commandChanged(); } }
     void setDesktopFile(const QString &p) { if (m_desktopFile != p) { m_desktopFile = p; Q_EMIT desktopFileChanged(); } }
+    void setAppId(const QString &id) { if (m_appId != id) { m_appId = id; Q_EMIT appIdChanged(); } }
     void setWindowId(quint64 id) { if (m_windowId != id) { m_windowId = id; Q_EMIT windowIdChanged(); } }
     void setActive(bool on) { if (m_isActive != on) { m_isActive = on; Q_EMIT isActiveChanged(); } }
     void setMinimized(bool on) { if (m_isMinimized != on) { m_isMinimized = on; Q_EMIT isMinimizedChanged(); } }
     void setRunning(bool on) { if (m_isRunning != on) { m_isRunning = on; Q_EMIT isRunningChanged(); } }
     void setItemIndex(int i) { if (m_itemIndex != i) { m_itemIndex = i; Q_EMIT itemIndexChanged(); } }
+    void setBadgeCount(int c) { if (m_badgeCount != c) { m_badgeCount = c; Q_EMIT badgeCountChanged(); } }
 
 Q_SIGNALS:
     void nameChanged();
     void iconNameChanged();
     void commandChanged();
     void desktopFileChanged();
+    void appIdChanged();
     void windowIdChanged();
     void isActiveChanged();
     void isMinimizedChanged();
     void isRunningChanged();
     void itemIndexChanged();
+    void badgeCountChanged();
 
 private:
     Kind m_kind = Kind::Launcher;
@@ -73,11 +81,13 @@ private:
     QString m_iconName;
     QString m_command;
     QString m_desktopFile;
+    QString m_appId;
     quint64 m_windowId = 0;
     bool m_isActive = false;
     bool m_isMinimized = false;
     bool m_isRunning = false;
     int m_itemIndex = -1;
+    int m_badgeCount = 0;
 };
 
 #endif
