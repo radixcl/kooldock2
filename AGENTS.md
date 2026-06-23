@@ -33,11 +33,13 @@ below were only caught this way.
 | `src/main.cpp` | App entrypoint, `KAboutData`, CLI parsing, D-Bus single-instance setup |
 | `src/kooldock.cpp`/`.h` | Singleton controller: owns the `QQuickView`, the `LayerShellQt::Window`, window sizing (`maxDockWidth()`/`maxDockHeight()`), blur region updates |
 | `src/dockmodel.cpp`/`.h` | `QAbstractListModel` merging launchers (`LauncherItems`) and running windows (`WindowTasks`) for QML |
-| `src/windowtasks.cpp`/`.h` | KWindowSystem-based task tracking |
+| `src/windowtasks.cpp`/`.h` | Task tracking facade: `KX11Extras`/`KWindowSystem` on X11, delegates to `WaylandWindowTasks` on Wayland |
+| `src/waylandwindowtasks.cpp`/`.h` | Wayland task tracking via the `org_kde_plasma_window_management` protocol (qtwaylandscanner-generated client bindings) — see invariant #9 below before assuming this "just works" |
 | `src/windowactions.cpp`/`.h` | minimize/maximize/close/etc. for the currently-targeted task |
 | `src/launcheritems.cpp`/`.h` | Reads `.desktop` launcher files |
 | `src/item.h` | `QObject` wrapper for one dock entry (launcher or task) |
 | `data/kooldock.kcfg` + `src/kooldocksettings.kcfgc` | KConfigXT schema → generates `KoolDockSettings` |
+| `data/org.kde.kooldock2.desktop.cmake` + `data/CMakeLists.txt` | Authorizes the privileged `org_kde_plasma_window_management` Wayland protocol for the installed binary — see invariant #9 |
 | `qml/Main.qml` | Top-level window content: hover tracking, the "glass pill" background, window-level sizing |
 | `qml/DockBar.qml` | The parabolic zoom math and per-icon layout |
 | `qml/DockItem.qml` | One icon: size/position animation, icon image, tooltip, context-menu trigger |
@@ -126,6 +128,26 @@ below were only caught this way.
    the live size makes the `image://kicon/` provider re-render the icon
    from the theme on every animation frame — a real, visible flicker under
    load, not just a theoretical one.
+
+9. **`org_kde_plasma_window_management` requires an installed `.desktop` file
+   declaring `X-KDE-Wayland-Interfaces`, or KWin silently omits it.** KWin
+   blacklists this protocol by default (along with `org_kde_kwin_fake_input`,
+   `zkde_screencast_unstable_v1`, and a few others) and only advertises it to
+   a client whose **installed** desktop file's `Exec=` resolves — via
+   `QFileInfo::canonicalFilePath()`, with no `$PATH` search, so `Exec=` must
+   be an absolute path — to that exact running binary, and which lists the
+   interface name in `X-KDE-Wayland-Interfaces`. Without a match, the global
+   is missing from the Wayland registry entirely (not merely inaccessible):
+   `WaylandWindowTasks::start()` logs "not advertised by compositor" and the
+   dock silently shows zero window tasks, with no error surfaced by KWin.
+   This is why **running `./build/bin/kooldock2` directly never shows window
+   tasks under Plasma Wayland** — only a binary installed at the path
+   `data/org.kde.kooldock2.desktop.cmake` declares (`cmake --install build`,
+   then `kbuildsycoca6`) is authorized. Also: on KF6/KService as packaged by
+   at least Ubuntu, `X-KDE-Wayland-Interfaces` values must be comma-separated
+   (`a,b`, matching `org.kde.plasmashell.desktop`) — a `;`-separated value is
+   *not* split into a real list by `KService::property<QStringList>()` here
+   and the check always fails.
 
 ## Settings wiring pattern
 

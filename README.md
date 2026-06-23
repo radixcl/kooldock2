@@ -50,6 +50,20 @@ cmake --build build
 ./build/bin/kooldock2
 ```
 
+Under Plasma Wayland, running the binary straight out of `build/bin/` will
+show launchers but **no running window tasks**: KWin only grants the
+`org_kde_plasma_window_management` protocol to a binary that's installed at
+the path declared in `data/org.kde.kooldock2.desktop.cmake`, matched by
+exact executable path. To see window tasks, install it first:
+
+```sh
+sudo cmake --install build
+kbuildsycoca6
+kooldock2   # now resolved from $PATH, e.g. /usr/bin/kooldock2
+```
+
+See [AGENTS.md](AGENTS.md) invariant #9 for why this is required.
+
 Command-line options:
 
 - `-o`, `--options` — open the preferences window on start.
