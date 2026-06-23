@@ -27,6 +27,7 @@ Item {
     property bool tooltipItalic: false
     property string tooltipFont: "Sans Serif"
     property color tooltipColor: "#f1f1f1"
+    property color tooltipShadowColor: "#000000"
 
     // Drag-and-drop state. When dragging, the item is lifted (scale +
     // shadow), follows the cursor, and the bar handles reordering or
@@ -48,6 +49,10 @@ Item {
 
     width:  itemSize
     height: itemSize
+    // Raise the whole item above siblings while its tooltip is showing so
+    // the tooltip (a child, see below) renders on top of neighbouring
+    // zoomed icons. Reverts to 0 when hidden — no effect on normal z-order.
+    z: tooltipBox.opacity > 0.01 ? 100 : 0
 
     // Position along the dock's long axis (itemPos) and short axis (edge
     // side). On BottomEdge icons sit at the bottom and grow upward; on
@@ -71,6 +76,21 @@ Item {
     }
     scale: dragActive ? 1.3 : (beingDestroyed ? destroyScale.scale : 1.0)
     transformOrigin: Item.Center
+
+    // Click feedback bounce (macOS-style squash & pop). Implemented as a
+    // transform so it composes with the `scale` property above (used for
+    // drag/destroy) without touching it, and doesn't perturb the layout
+    // inputs (x/y/width/height) that DockBar.layout() relies on — transforms
+    // are render-only. Origin is anchored to the screen-edge base of the
+    // icon so the squash presses into the dock and the bounce pops away from
+    // the edge, matching the zoom's grow-away-from-edge direction.
+    transform: Scale {
+        id: clickBounce
+        origin.x: vertical ? (edge === Qt.LeftEdge ? 0 : item.width) : item.width / 2
+        origin.y: vertical ? item.height / 2 : (edge === Qt.TopEdge ? 0 : item.height)
+        xScale: 1.0
+        yScale: 1.0
+    }
 
     Behavior on scale {
         enabled: !beingDestroyed
@@ -102,8 +122,10 @@ Item {
             if (dragActive) return
             if (mouse.button === Qt.RightButton)
                 item.contextMenuRequested(mapToItem(null, mouse.x, mouse.y))
-            else
+            else {
+                item.playClickBounce()
                 item.activated()
+            }
         }
     }
 
@@ -165,17 +187,80 @@ Item {
         color: taskDotColor; visible: isTask; opacity: taskDotOpacity
     }
 
-    ToolTip {
-        visible: showNames && ma.containsMouse && item.name.length > 0 && !dragActive
-        text: item.name
-        delay: tooltipDelay; timeout: tooltipTimeout
-        contentItem: Text {
+    // Custom in-scene tooltip (macOS-style). Rendered as a child of this
+    // item, NOT a QtQuick.Controls ToolTip popup — so it's part of the same
+    // Wayland surface and the root HoverHandler never loses hover (the dock
+    // doesn't auto-hide when the cursor is over the tooltip). Positioned in
+    // the overflow area above the icon, away from the screen edge. Has no
+    // MouseArea so it doesn't intercept pointer events or block neighbours.
+    Rectangle {
+        id: tooltipBox
+        visible: opacity > 0.01
+        opacity: 0
+        radius: 6
+        color: Qt.rgba(0.1, 0.1, 0.15, 0.9)
+        border.color: Qt.rgba(1, 1, 1, 0.08)
+        border.width: 1
+
+        width: tooltipText.width + 16
+        height: tooltipText.height + 8
+
+        // Centered on the icon along the long axis; in the overflow area
+        // (away from the screen edge) along the short axis with an 8px gap.
+        x: vertical ? (edge === Qt.LeftEdge ? itemSize + 8 : itemSize - width - 8)
+                    : (itemSize - width) / 2
+        y: vertical ? (itemSize - height) / 2
+                    : (edge === Qt.TopEdge ? itemSize + 8 : itemSize - height - 8)
+
+        Text {
+            id: tooltipText
+            anchors.centerIn: parent
             text: item.name
             font.family: tooltipFont
             font.pixelSize: tooltipSize
             font.bold: tooltipBold
             font.italic: tooltipItalic
             color: tooltipColor
+            style: Text.Raised
+            styleColor: tooltipShadowColor
+        }
+
+        Behavior on opacity {
+            NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+        }
+
+        // Show after tooltipDelay; the Timer's `running` binding starts it
+        // when the mouse enters and stops/resets it when the mouse leaves
+        // (so a quick pass doesn't flash the tooltip).
+        Timer {
+            id: tooltipShowTimer
+            interval: tooltipDelay
+            repeat: false
+            running: ma.containsMouse && showNames && item.name.length > 0 && !dragActive
+            onTriggered: {
+                tooltipBox.opacity = 1
+                if (tooltipTimeout > 0) tooltipHideTimer.restart()
+            }
+        }
+
+        // Auto-hide after tooltipTimeout ms.
+        Timer {
+            id: tooltipHideTimer
+            interval: tooltipTimeout
+            repeat: false
+            onTriggered: tooltipBox.opacity = 0
+        }
+
+        // Hide immediately when the mouse leaves the item.
+        Connections {
+            target: ma
+            function onContainsMouseChanged() {
+                if (!ma.containsMouse) {
+                    tooltipShowTimer.stop()
+                    tooltipHideTimer.stop()
+                    tooltipBox.opacity = 0
+                }
+            }
         }
     }
 
@@ -264,6 +349,30 @@ Item {
         destroyScale.scale = 1.3
         poofContainer.start()
         destroyAnim.start()
+    }
+
+    function playClickBounce() {
+        clickBounceAnim.stop()
+        clickBounce.xScale = 1.0
+        clickBounce.yScale = 1.0
+        clickBounceAnim.start()
+    }
+
+    // macOS-style click feedback: a quick squash toward the dock edge
+    // followed by a springy pop back to rest. OutBack overshoots past 1.0
+    // from the edge-base origin, so the icon visibly lifts off the dock
+    // before settling — the bounce.
+    SequentialAnimation {
+        id: clickBounceAnim
+
+        ParallelAnimation {
+            NumberAnimation { target: clickBounce; property: "xScale"; to: 0.88; duration: 100; easing.type: Easing.InQuad }
+            NumberAnimation { target: clickBounce; property: "yScale"; to: 0.88; duration: 100; easing.type: Easing.InQuad }
+        }
+        ParallelAnimation {
+            NumberAnimation { target: clickBounce; property: "xScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
+            NumberAnimation { target: clickBounce; property: "yScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
+        }
     }
 
     SequentialAnimation {

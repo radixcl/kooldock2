@@ -35,6 +35,7 @@ Item {
     readonly property bool tooltipItalic: settings ? settings.tooltipItalic : false
     readonly property string tooltipFont: settings ? settings.tooltipFont : "Sans Serif"
     readonly property color tooltipColor: settings ? settings.tooltipColor : "#f1f1f1"
+    readonly property color tooltipShadowColor: settings ? settings.tooltipShadowColor : "#000000"
 
     // Dock geometry along its long and short axes. The long axis is the one
     // icons lay out on (horizontal for Top/BottomEdge, vertical for
@@ -61,6 +62,19 @@ Item {
     HoverHandler { id: hoverHandler }
     readonly property bool containsMouse: dockBar.containsMouse || (kooldock ? kooldock.dragActive : false)
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
+
+    // Suppress the auto-hide animation on the very first binding pass.
+    // `kooldock` is set after setSource() (see kooldock.cpp), so on the first
+    // evaluation autoHide is false and the pill reads as fully shown
+    // (opacity 1, scale 1, slide 0); once kooldock arrives autoHide becomes
+    // true and those bindings snap to the hidden state. Without this gate the
+    // Behaviors animate that snap and the pill flashes on screen at launch.
+    // `ready` flips on after the first event-loop spin, by which point the
+    // hidden state has already been applied instantly; subsequent hover
+    // show/hide animates normally.
+    property bool ready: false
+    Component.onCompleted: readyTimer.start()
+    Timer { id: readyTimer; interval: 0; onTriggered: root.ready = true }
 
     // When auto-hide is on and the dock is hidden (trigger strip),
     // a drag-and-drop from another app (e.g. dragging a .desktop file
@@ -132,8 +146,8 @@ Item {
             y: autoHide && !containsMouse
                ? (edge === Qt.TopEdge ? -bg.height : edge === Qt.BottomEdge ? bg.height : 0)
                : 0
-            Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on x { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on y { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             // Update the blur region every frame as the pill slides, so the
             // blur stays aligned with the visible pill and never shows a
             // static blurred rectangle before/after the animation.
@@ -143,8 +157,8 @@ Item {
 
         Behavior on width   { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
         Behavior on height  { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
-        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-        Behavior on scale   { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        Behavior on opacity { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        Behavior on scale   { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         // Keep the desktop blur region matched to the pill's actual current
         // bounds — including its rounded corners — so neither the side dead
@@ -201,6 +215,7 @@ Item {
             tooltipItalic: root.tooltipItalic
             tooltipFont: root.tooltipFont
             tooltipColor: root.tooltipColor
+            tooltipShadowColor: root.tooltipShadowColor
             windowExtent: vertical ? root.height : root.width
             // Once the pointer leaves the window, point.position freezes at
             // its last value and never changes again, so nothing would

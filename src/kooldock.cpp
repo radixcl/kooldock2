@@ -276,7 +276,16 @@ int KoolDock::maxDockShortSize() const
     // possible icon plus its margin. Same for all four edges.
     const int bgHeight = KoolDockSettings::dockHeight();
     const int needed = KoolDockSettings::iconSpacing() + KoolDockSettings::bigIconSize() + 4;
-    return qMax(bgHeight, needed);
+    int shortSize = qMax(bgHeight, needed);
+    // Reserve space above the tallest zoomed icon for the in-scene tooltip
+    // (DockItem.qml renders it in the overflow area, away from the screen
+    // edge). Without this, Wayland clips the tooltip to the surface edge.
+    // The tooltip is ~24px tall (12px text + padding) with an 8px gap; 40
+    // gives a comfortable margin. Only needed when tooltips are enabled.
+    if (KoolDockSettings::showNames()) {
+        shortSize += 40;
+    }
+    return shortSize;
 }
 
 int KoolDock::maxDockWidth() const
