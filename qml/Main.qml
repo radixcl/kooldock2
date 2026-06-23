@@ -45,10 +45,19 @@ Item {
     // Width hugs the icons' current (possibly zoomed) total span and stays
     // horizontally centered, so the pill grows/shrinks with the zoom while
     // the icons (always centered within it, see DockBar.qml) never drift.
+    // On BottomEdge the pill sits at the window's bottom and icons grow
+    // upward into the reserved space above it; on TopEdge the pill sits at
+    // the window's top and icons grow downward into the reserved space
+    // below it — same dockHeight, opposite side.
     Rectangle {
         id: bg
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.bottom: parent.bottom
+        // Position vertically with y instead of anchors.top/bottom:
+        // switching anchors dynamically (top ? parent.top : undefined)
+        // can leave both vertical anchors set for a frame when the edge
+        // changes at runtime, which stretches the Rectangle to fill the
+        // whole window and spills its color/blur into the overflow area.
+        y: edge === Qt.TopEdge ? 0 : (parent.height - height)
         width: Math.max(dockBar.contentWidth + root.spacing * 2, 64)
         height: bgHeight
         radius: 18
@@ -59,7 +68,7 @@ Item {
 
         opacity: autoHide ? (containsMouse ? 1.0 : 0.0) : 1.0
         scale: autoHide ? (containsMouse ? 1.0 : 0.7) : 1.0
-        transformOrigin: Item.Bottom
+        transformOrigin: edge === Qt.TopEdge ? Item.Top : Item.Bottom
 
         Behavior on width   { NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
         Behavior on opacity { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -76,8 +85,11 @@ Item {
             id: dockBar
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
             anchors.margins: root.spacing
+            // Same reasoning as bg above: avoid dynamic vertical anchors.
+            // BottomEdge: bar sits at the bottom of the pill (y = h - barH -
+            // margin). TopEdge: bar sits at the top (y = margin).
+            y: edge === Qt.TopEdge ? root.spacing : (parent.height - height - root.spacing)
             height: bgHeight - root.spacing
             clip: false
 

@@ -214,12 +214,13 @@ int KoolDock::maxDockWidth() const
 
 int KoolDock::maxDockHeight() const
 {
-    // The visible pill (DockBar.qml's bg) is bottom-anchored and always
-    // exactly bgHeight tall; icons grow upward from its top edge, which sits
-    // bgHeight above the window's bottom regardless of icon size. So the
-    // window just needs enough room above that fixed bottom edge to fit the
-    // tallest possible icon plus its bottom margin (matches Main.qml's
-    // iconSpacing-based bottom margin on DockBar) — independent of bgHeight.
+    // The visible pill (Main.qml's bg) is always exactly bgHeight tall and
+    // sits against the screen edge (bottom on BottomEdge, top on TopEdge);
+    // icons grow away from that edge into the reserved space on the opposite
+    // side. So the window needs enough room on that side to fit the tallest
+    // possible icon plus its margin (matches Main.qml's iconSpacing-based
+    // margin on DockBar) — independent of bgHeight and the same for both
+    // horizontal edges.
     const int bgHeight = 60;
     const int needed = KoolDockSettings::iconSpacing() + KoolDockSettings::bigIconSize() + 4;
     return qMax(bgHeight, needed);
@@ -229,18 +230,21 @@ void KoolDock::applyBlur()
 {
     if (!m_view) return;
     if (KoolDockSettings::blurBackground()) {
-        // Blur only the background pill's actual current bounds (bottom
-        // 60px), kept in sync with the QML side via updateBlurRegion() as it
-        // resizes with the zoom — not the wider reserved overflow area,
-        // which must stay transparent just like the space above the bar.
-        // The region is rounded to match the pill's radius; a plain
-        // rectangular region would blur the four corners that the rounded
-        // rectangle actually leaves transparent, showing a blurred square
-        // peeking out from behind the rounded glass shape.
+        // Blur only the background pill's actual current bounds (the 60px
+        // band at the screen-edge side of the window), kept in sync with
+        // the QML side via updateBlurRegion() as it resizes with the zoom —
+        // not the wider reserved overflow area, which must stay transparent
+        // just like the space on the opposite side of the bar. On
+        // BottomEdge the pill sits at the window's bottom (y = h - bgHeight);
+        // on TopEdge it sits at the top (y = 0). The region is rounded to
+        // match the pill's radius; a plain rectangular region would blur the
+        // four corners that the rounded rectangle actually leaves
+        // transparent, showing a blurred square peeking out from behind the
+        // rounded glass shape.
         const qreal x = qMax<qreal>(0, m_blurX);
         const qreal width = m_blurWidth > 0 ? m_blurWidth : m_view->width();
         const int bgHeight = 60;
-        const qreal y = m_view->height() - bgHeight;
+        const qreal y = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
         QPainterPath path;
         path.addRoundedRect(QRectF(x, y, width, bgHeight), m_blurRadius, m_blurRadius);
         KWindowEffects::enableBlurBehind(m_view, true, QRegion(path.toFillPolygon().toPolygon()));

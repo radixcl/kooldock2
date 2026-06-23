@@ -29,7 +29,10 @@ Item {
     height: itemSize
 
     x: vertical ? (parent.width - itemSize) : itemX
-    y: vertical ? itemX : (parent.height - itemSize)
+    // On BottomEdge the icon sits at the bottom of the bar and grows
+    // upward; on TopEdge it sits at the top and grows downward — so the
+    // zoom overflow extends away from the screen edge in both cases.
+    y: vertical ? itemX : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))
 
     Behavior on width  { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
     Behavior on height { NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
@@ -68,7 +71,10 @@ Item {
     }
 
     Rectangle {
-        anchors.bottom: parent.bottom; anchors.bottomMargin: 2
+        // Position with y instead of dynamic anchors (see Main.qml's bg
+        // for why): TopEdge puts the dot at the top of the icon, BottomEdge
+        // at the bottom.
+        y: edge === Qt.TopEdge ? 2 : (parent.height - height - 2)
         anchors.horizontalCenter: parent.horizontalCenter
         width: 4; height: 4; radius: 2
         color: "#aaffffff"; visible: isTask; opacity: 0.6
