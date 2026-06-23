@@ -173,9 +173,12 @@ void WindowTasks::start()
         });
         m_waylandTasks->start();
 
-        m_available = m_waylandTasks->isActive();
-        qDebug() << "WindowTasks::start() wayland initial available=" << m_available;
-        Q_EMIT availabilityChanged();
+        const bool nowAvailable = m_waylandTasks->isActive();
+        qDebug() << "WindowTasks::start() wayland initial available=" << nowAvailable;
+        if (m_available != nowAvailable) {
+            m_available = nowAvailable;
+            Q_EMIT availabilityChanged();
+        }
     }
 }
 

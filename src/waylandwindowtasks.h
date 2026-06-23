@@ -60,22 +60,60 @@ public:
     QHash<quint64, PlasmaWindow *> windows() const { return m_windows; }
     WindowTaskInfo windowInfo(quint64 id) const;
 
-Q_SIGNALS:
+    // Create a PlasmaWindow from a uuid. Called from both the
+    // window_with_uuid event (newly mapped windows) and from
+    // PlasmaStackingOrder (existing windows at bind time). Returns the
+    // numeric windowId, or 0 if the window already exists or creation
+    // failed.
+    quint64 addWindow(const QString &uuid);
+
+    Q_SIGNALS:
     void windowAdded(quint64 windowId);
     void windowRemoved(quint64 windowId);
     void windowChanged(quint64 windowId);
     void activeWindowChanged(quint64 windowId);
 
 protected:
+    // Legacy event (protocol < 13): window announced with a numeric id.
+    // Kept for backward compat with older compositors.
     void org_kde_plasma_window_management_window(uint32_t id) override;
+    // Modern event (protocol >= 13): window announced with a uuid.
+    void org_kde_plasma_window_management_window_with_uuid(uint32_t id, const QString &uuid) override;
+    // Sent on bind and when stacking order changes (protocol >= 17).
+    // Client should call get_stacking_order() to receive the current
+    // window list.
+    void org_kde_plasma_window_management_stacking_order_changed_2() override;
 
 private:
     void onWindowInfoChanged(quint64 id);
     void onWindowUnmapped();
     void updateActiveWindow();
+    quint64 ensureWindowId(const QString &uuid);
 
     QHash<quint64, PlasmaWindow *> m_windows;
+    QHash<QString, quint64> m_uuidToId;
+    quint64 m_nextWindowId = 0;
     quint64 m_activeWindow = 0;
+};
+
+// Helper object for receiving the initial window list at bind time
+// (protocol >= 17). The compositor sends a `window(uuid)` event for each
+// window in the stacking order, then `done()` and destroys the object.
+// For each uuid, PlasmaWindowManagement::addWindow() is called to create
+// the org_kde_plasma_window object.
+class PlasmaStackingOrder : public QObject, public QtWayland::org_kde_plasma_stacking_order
+{
+    Q_OBJECT
+public:
+    explicit PlasmaStackingOrder(struct ::org_kde_plasma_stacking_order *object, PlasmaWindowManagement *management);
+    ~PlasmaStackingOrder() override;
+
+protected:
+    void org_kde_plasma_stacking_order_window(const QString &uuid) override;
+    void org_kde_plasma_stacking_order_done() override;
+
+private:
+    PlasmaWindowManagement *m_management;
 };
 
 class WaylandWindowTasks : public QObject

@@ -109,6 +109,45 @@ void PlasmaWindowManagement::bind(struct ::wl_registry *registry, uint32_t id, u
     init(registry, id, bindVersion);
 }
 
+quint64 PlasmaWindowManagement::ensureWindowId(const QString &uuid)
+{
+    auto it = m_uuidToId.constFind(uuid);
+    if (it != m_uuidToId.constEnd()) {
+        return it.value();
+    }
+    const quint64 id = ++m_nextWindowId;
+    m_uuidToId.insert(uuid, id);
+    return id;
+}
+
+quint64 PlasmaWindowManagement::addWindow(const QString &uuid)
+{
+    const quint64 windowId = ensureWindowId(uuid);
+    qDebug() << "PlasmaWindowManagement::addWindow uuid=" << uuid << "windowId=" << windowId
+             << "existing=" << m_windows.contains(windowId);
+    if (m_windows.contains(windowId)) {
+        return windowId;
+    }
+
+    struct ::org_kde_plasma_window *windowObject = get_window_by_uuid(uuid);
+    if (!windowObject) {
+        qWarning() << "PlasmaWindowManagement::addWindow get_window_by_uuid returned null for uuid=" << uuid;
+        return 0;
+    }
+
+    auto *window = new PlasmaWindow(windowId, windowObject, this);
+    m_windows.insert(windowId, window);
+
+    connect(window, &PlasmaWindow::infoChanged, this, [this, windowId]() {
+        onWindowInfoChanged(windowId);
+    });
+    connect(window, &PlasmaWindow::unmapped, this, &PlasmaWindowManagement::onWindowUnmapped);
+
+    Q_EMIT windowAdded(windowId);
+    updateActiveWindow();
+    return windowId;
+}
+
 WindowTaskInfo PlasmaWindowManagement::windowInfo(quint64 id) const
 {
     PlasmaWindow *window = m_windows.value(id);
@@ -117,8 +156,12 @@ WindowTaskInfo PlasmaWindowManagement::windowInfo(quint64 id) const
 
 void PlasmaWindowManagement::org_kde_plasma_window_management_window(uint32_t id)
 {
+    // Legacy event (protocol < 13): only carries a numeric id, no uuid.
+    // We can't use get_window_by_uuid here, so fall back to get_window.
+    // On modern KWin (protocol 20) this event is not sent.
     const quint64 windowId = static_cast<quint64>(id);
-    qDebug() << "PlasmaWindowManagement::window id=" << windowId << "existing=" << m_windows.contains(windowId);
+    qDebug() << "PlasmaWindowManagement::window (legacy) id=" << windowId
+             << "existing=" << m_windows.contains(windowId);
     if (m_windows.contains(windowId)) {
         return;
     }
@@ -139,6 +182,28 @@ void PlasmaWindowManagement::org_kde_plasma_window_management_window(uint32_t id
 
     Q_EMIT windowAdded(windowId);
     updateActiveWindow();
+}
+
+void PlasmaWindowManagement::org_kde_plasma_window_management_window_with_uuid(uint32_t id, const QString &uuid)
+{
+    // Modern event (protocol >= 13): carries both a deprecated numeric id
+    // and a uuid. We use the uuid with get_window_by_uuid to create the
+    // window object. This is what KWin (protocol 20) sends for newly
+    // mapped windows after bind.
+    Q_UNUSED(id);
+    qDebug() << "PlasmaWindowManagement::window_with_uuid uuid=" << uuid;
+    addWindow(uuid);
+}
+
+void PlasmaWindowManagement::org_kde_plasma_window_management_stacking_order_changed_2()
+{
+    // Sent on bind and when stacking order changes (protocol >= 17).
+    // Request the current stacking order to get all existing windows.
+    qDebug() << "PlasmaWindowManagement::stacking_order_changed_2";
+    struct ::org_kde_plasma_stacking_order *so = get_stacking_order();
+    if (so) {
+        new PlasmaStackingOrder(so, this);
+    }
 }
 
 void PlasmaWindowManagement::onWindowInfoChanged(quint64 id)
@@ -180,6 +245,33 @@ void PlasmaWindowManagement::updateActiveWindow()
     }
     m_activeWindow = newActive;
     Q_EMIT activeWindowChanged(newActive);
+}
+
+PlasmaStackingOrder::PlasmaStackingOrder(struct ::org_kde_plasma_stacking_order *object, PlasmaWindowManagement *management)
+    : QObject(management)
+    , m_management(management)
+{
+    init(object);
+}
+
+PlasmaStackingOrder::~PlasmaStackingOrder()
+{
+    // The compositor destroys the wl object after sending `done()`. No
+    // client-side destroy() request exists for this interface — the
+    // generated binding has no destroy() method (done is a destructor
+    // event, not a destructor request).
+}
+
+void PlasmaStackingOrder::org_kde_plasma_stacking_order_window(const QString &uuid)
+{
+    if (m_management) {
+        m_management->addWindow(uuid);
+    }
+}
+
+void PlasmaStackingOrder::org_kde_plasma_stacking_order_done()
+{
+    deleteLater();
 }
 
 WaylandWindowTasks::WaylandWindowTasks(QObject *parent)
@@ -237,7 +329,23 @@ void WaylandWindowTasks::start()
     };
 
     wl_registry_add_listener(m_registry, &registryListener, this);
+    // Roundtrip 1: fires the registry's `global` callback, which binds to
+    // org_kde_plasma_window_management. After bind, the compositor queues
+    // the `stacking_order_changed_2` event (and the initial window events
+    // once we request the stacking order).
     wl_display_roundtrip(display);
+
+    if (m_management) {
+        // Roundtrip 2: dispatches `stacking_order_changed_2` (which calls
+        // get_stacking_order in its handler), and the stacking order's
+        // `window(uuid)` events that create the initial PlasmaWindow
+        // objects via get_window_by_uuid. The compositor queues each
+        // window's initial state events (title, app_id, state, etc.).
+        wl_display_roundtrip(display);
+        // Roundtrip 3: dispatches the initial window state events so the
+        // dock has title/icon/state for each window before it renders.
+        wl_display_roundtrip(display);
+    }
 
     if (!m_management) {
         qWarning() << "WaylandWindowTasks: org_kde_plasma_window_management not advertised by compositor";
@@ -286,7 +394,11 @@ WaylandWindowTasks::TaskData WaylandWindowTasks::taskData(quint64 windowId) cons
     const WindowTaskInfo info = m_management->windowInfo(windowId);
     data.windowId = info.windowId;
     data.title = info.title;
-    data.iconName = info.iconName;
+    // Fall back to appId when no themed icon name was provided. Many
+    // Wayland apps don't send themed_icon_name_changed but do send
+    // app_id_changed, and the appId is typically the desktop file name
+    // (e.g. "firefox") which QIcon::fromTheme can resolve.
+    data.iconName = info.iconName.isEmpty() ? info.appId : info.iconName;
     data.minimized = info.state & QtWayland::org_kde_plasma_window_management::state_minimized;
     data.active = info.state & QtWayland::org_kde_plasma_window_management::state_active;
     data.skipTaskbar = info.state & QtWayland::org_kde_plasma_window_management::state_skiptaskbar;
