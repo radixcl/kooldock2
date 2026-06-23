@@ -56,6 +56,21 @@ void DockModel::activate(int row)
 {
     if (row < 0 || row >= m_items.size()) return;
     Item *item = m_items.at(row);
+    // AppMenu: show the KDE application launcher via DBus.
+    if (item->isAppMenu()) {
+        if (m_tasks) {
+            // Defer to KoolDock via the tasks parent — but we don't have
+            // a direct reference. Use QMetaObject::invokeMethod through
+            // the model's parent chain. Simpler: emit a signal.
+        }
+        Q_EMIT activateAppMenu();
+        return;
+    }
+    // Trash: open the trash folder.
+    if (item->isTrash()) {
+        Q_EMIT activateTrash();
+        return;
+    }
     // A launcher with a running task (fused) behaves like the task:
     // click toggles minimize/activate instead of launching a new instance.
     if (item->isLauncher() && item->isRunning() && item->windowId()) {
@@ -87,7 +102,6 @@ void DockModel::launch(int row)
 
     const QString desktopFile = item->desktopFile();
     if (!desktopFile.isEmpty()) {
-        KDesktopFile df(desktopFile);
         KService::Ptr service = KService::serviceByDesktopPath(desktopFile);
         if (service) {
             auto *job = new KIO::ApplicationLauncherJob(service);
@@ -95,6 +109,7 @@ void DockModel::launch(int row)
             job->start();
             return;
         }
+        KDesktopFile df(desktopFile);
         const QString exec = df.desktopGroup().readEntry(QStringLiteral("Exec"), QString());
         if (!exec.isEmpty()) {
             auto *job = new KIO::CommandLauncherJob(exec);
@@ -110,11 +125,30 @@ void DockModel::launch(int row)
     }
 }
 
+void DockModel::newWindow(int row)
+{
+    // Launch a new instance of the launcher at `row`, even if it's fused
+    // with a running task. Used by the "New Window" context menu item.
+    if (row < 0 || row >= m_items.size()) return;
+    Item *item = m_items.at(row);
+    if (!item->isLauncher()) return;
+    launch(row);
+}
+
 void DockModel::reload()
 {
     m_items.clear();
     m_taskItems.clear();
-    m_items = m_launchers->load();
+
+    // AppMenu (KDE application launcher) as the first item, if enabled.
+    if (KoolDockSettings::showKMenu()) {
+        auto *appMenuItem = new Item(Item::Kind::AppMenu,
+            QStringLiteral("Applications"), QStringLiteral("start-here-kde"),
+            QString(), 0);
+        m_items.append(appMenuItem);
+    }
+
+    m_items += m_launchers->load();
 
     if (KoolDockSettings::showTaskbar() && m_tasks && m_tasks->isAvailable()) {
         for (quint64 wid : m_tasks->windowIds()) {
@@ -123,6 +157,12 @@ void DockModel::reload()
         m_activeWindow = m_tasks->activeWindow();
     }
     updateIndices();
+
+    // Trash bin at the end, macOS-style.
+    auto *trashItem = new Item(Item::Kind::Trash,
+        QStringLiteral("Trash"), QStringLiteral("user-trash"),
+        QString(), 0);
+    m_items.append(trashItem);
 
     beginResetModel();
     endResetModel();
@@ -140,16 +180,27 @@ void DockModel::updateIndices()
 int DockModel::insertTaskSorted(Item *item)
 {
     int firstTask = 0;
-    while (firstTask < m_items.size() && m_items.at(firstTask)->isLauncher()) {
+    while (firstTask < m_items.size() && (m_items.at(firstTask)->isLauncher() || m_items.at(firstTask)->isAppMenu())) {
         ++firstTask;
     }
-    beginInsertRows({}, firstTask, firstTask);
-    m_items.insert(firstTask, item);
+    // Insert before the trash item (always last).
+    int insertAt = firstTask;
+    while (insertAt < m_items.size() && m_items.at(insertAt)->isTask()) {
+        ++insertAt;
+    }
+    // If the item at insertAt is the trash, insert before it.
+    if (insertAt < m_items.size() && m_items.at(insertAt)->isTrash()) {
+        // insert before trash
+    } else if (insertAt >= m_items.size()) {
+        // No trash, insert at end
+    }
+    beginInsertRows({}, insertAt, insertAt);
+    m_items.insert(insertAt, item);
     endInsertRows();
     updateIndices();
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
-    return firstTask;
+    return insertAt;
 }
 
 bool DockModel::shouldShowTask(const WindowTasks::TaskData &data) const
@@ -364,6 +415,46 @@ bool DockModel::isLauncher(int row) const
     return m_items.at(row)->isLauncher();
 }
 
+QString DockModel::desktopPathForAppId(const QString &appId) const
+{
+    if (appId.isEmpty()) return {};
+    // Try KService to resolve the appId to a .desktop file path.
+    const KService::Ptr service = KService::serviceByDesktopName(appId);
+    if (service) {
+        const QString path = service->entryPath();
+        if (!path.isEmpty() && QFile::exists(path)) return path;
+    }
+    // Try with "org.kde." prefix stripped (some apps report full reverse-DNS).
+    if (appId.startsWith(QStringLiteral("org.kde."))) {
+        const QString stripped = appId.mid(8);
+        const KService::Ptr s2 = KService::serviceByDesktopName(stripped);
+        if (s2) {
+            const QString path = s2->entryPath();
+            if (!path.isEmpty() && QFile::exists(path)) return path;
+        }
+    }
+    return {};
+}
+
+void DockModel::pinTask(quint64 windowId)
+{
+    // "Keep in Dock": resolve the running task's appId to a .desktop file
+    // and add it as a permanent launcher. The task will fuse with the new
+    // launcher on the next reload.
+    if (!m_tasks || !windowId) return;
+    const WindowTasks::TaskData data = m_tasks->taskData(windowId);
+    if (data.appId.isEmpty()) return;
+
+    const QString desktopPath = desktopPathForAppId(data.appId);
+    if (desktopPath.isEmpty()) {
+        qDebug() << "pinTask: no .desktop found for appId" << data.appId;
+        return;
+    }
+    qDebug() << "pinTask: adding launcher from" << desktopPath << "for appId" << data.appId;
+    m_launchers->addLauncher(desktopPath);
+    // addLauncher emits changed() which triggers reload().
+}
+
 Item *DockModel::findLauncherForAppId(const QString &appId) const
 {
     if (appId.isEmpty()) return nullptr;
@@ -384,9 +475,6 @@ Item *DockModel::findLauncherForAppId(const QString &appId) const
 
     for (Item *item : m_items) {
         if (!item->isLauncher() || item->desktopFile().isEmpty()) continue;
-        // Read the Exec directly from the launcher's .desktop file with
-        // KDesktopFile — KService::serviceByDesktopPath doesn't find
-        // .desktop files in our custom menuDir.
         KDesktopFile df(item->desktopFile());
         const QString launcherExec = df.desktopGroup().readEntry(QStringLiteral("Exec"), QString());
         const QString launcherProgram = execBase(launcherExec);
@@ -422,6 +510,9 @@ QVariantMap DockModel::itemData(int row) const
         {QStringLiteral("name"), item->name()},
         {QStringLiteral("iconName"), item->iconName()},
         {QStringLiteral("isTask"), item->isTask()},
+        {QStringLiteral("isLauncher"), item->isLauncher()},
+        {QStringLiteral("isAppMenu"), item->isAppMenu()},
+        {QStringLiteral("isTrash"), item->isTrash()},
         {QStringLiteral("isRunning"), item->isRunning()},
         {QStringLiteral("windowId"), item->windowId()},
         {QStringLiteral("itemIndex"), item->itemIndex()},

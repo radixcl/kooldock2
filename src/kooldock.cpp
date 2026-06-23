@@ -15,7 +15,11 @@
 #include <KLocalizedContext>
 #include <KLocalizedString>
 #include <KWindowEffects>
+#include <KIO/CopyJob>
 
+#include <QDBusInterface>
+#include <QDBusPendingReply>
+#include <QDesktopServices>
 #include <QIcon>
 #include <QPainterPath>
 #include <QQmlContext>
@@ -23,6 +27,7 @@
 #include <QQuickItem>
 #include <QScreen>
 #include <QTimer>
+#include <QUrl>
 
 class IconImageProvider : public QQuickImageProvider
 {
@@ -81,6 +86,9 @@ KoolDock::KoolDock(QObject *parent)
     setupView();
 
     connect(m_model, &DockModel::countChanged, this, [this]() { applyLayerShell(); });
+
+    connect(m_model, &DockModel::activateAppMenu, this, &KoolDock::showAppMenu);
+    connect(m_model, &DockModel::activateTrash, this, &KoolDock::openTrash);
 
     connect(KoolDockSettings::self(), &KCoreConfigSkeleton::configChanged,
             this, [this]() { reconfigure(); });
@@ -520,4 +528,33 @@ void KoolDock::onHideTimer()
     // surface geometry and can enter to trigger expansion.
     applyInputMask(true);
     KWindowEffects::enableBlurBehind(m_view, false);
+}
+
+void KoolDock::showAppMenu()
+{
+    // Show the KDE application launcher (Kickoff) via DBus.
+    auto *msg = new QDBusMessage(QDBusMessage::createMethodCall(
+        QStringLiteral("org.kde.plasmashell"),
+        QStringLiteral("/PlasmaShell"),
+        QStringLiteral("org.kde.PlasmaShell"),
+        QStringLiteral("showApplicationLauncher")));
+    QDBusPendingReply<> reply = QDBusConnection::sessionBus().asyncCall(*msg);
+    delete msg;
+}
+
+void KoolDock::openTrash()
+{
+    QDesktopServices::openUrl(QUrl(QStringLiteral("trash:/")));
+}
+
+void KoolDock::trashFiles(const QVariantList &urls)
+{
+    QList<QUrl> urlList;
+    urlList.reserve(urls.size());
+    for (const QVariant &v : urls) {
+        urlList.append(v.toUrl());
+    }
+    if (!urlList.isEmpty()) {
+        KIO::trash(urlList);
+    }
 }

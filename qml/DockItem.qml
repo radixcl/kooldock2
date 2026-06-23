@@ -7,6 +7,9 @@ Item {
     property string name: ""
     property string iconName: ""
     property bool isTask: false
+    property bool isLauncher: false
+    property bool isAppMenu: false
+    property bool isTrash: false
     property bool isRunning: false
     property var windowId: 0
     property int modelIndex: -1
@@ -48,6 +51,7 @@ Item {
     signal dragStarted(int index)
     signal dragMoved(real longPos, real crossPos)
     signal dragEnded(int index, real longPos, real crossPos)
+    signal trashDropped(var urls)
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     readonly property real iconPad: iconPadding
@@ -138,6 +142,29 @@ Item {
         }
     }
 
+    // Trash drop area: accept file drops to move files to trash.
+    // Only active for trash items. Accepts any URI (files, folders).
+    DropArea {
+        anchors.fill: parent
+        enabled: isTrash
+        keys: ["text/uri-list"]
+        onEntered: (drop) => {
+            drop.accepted = true
+            item.scale = 1.3
+        }
+        onDropped: (drop) => {
+            if (drop.hasUrls) {
+                const urls = []
+                for (let i = 0; i < drop.urls.length; i++)
+                    urls.push(drop.urls[i])
+                item.trashDropped(urls)
+            }
+            drop.accepted = true
+            item.scale = 1.0
+        }
+        onExited: { item.scale = 1.0 }
+    }
+
     // DragHandler: starts on press+move (after a small threshold so
     // clicks aren't interpreted as drags). Only launchers are draggable
     // — tasks come and go with windows and can't be reordered.
@@ -145,7 +172,7 @@ Item {
         id: dragHandler
         target: null
         acceptedButtons: Qt.LeftButton
-        enabled: !isTask && !beingDestroyed
+        enabled: !isTask && !isAppMenu && !isTrash && !beingDestroyed
         dragThreshold: 8
 
         onActiveChanged: {
@@ -197,7 +224,7 @@ Item {
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
         width: taskDotSize; height: taskDotSize; radius: taskDotSize / 2
-        color: taskDotColor; visible: isTask || isRunning; opacity: taskDotOpacity
+        color: taskDotColor; visible: (isTask || isRunning) && !isAppMenu && !isTrash; opacity: taskDotOpacity
     }
 
     // Custom in-scene tooltip (macOS-style). Rendered as a child of this

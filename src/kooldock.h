@@ -52,6 +52,9 @@ public Q_SLOTS:
     Q_INVOKABLE void setDragActive(bool active);
     Q_INVOKABLE void setDragExpanded(bool expanded);
     Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
+    Q_INVOKABLE void showAppMenu();
+    Q_INVOKABLE void openTrash();
+    Q_INVOKABLE void trashFiles(const QVariantList &urls);
     void reload();
     void showPreferences();
     void quit();

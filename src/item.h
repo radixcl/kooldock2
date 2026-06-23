@@ -17,13 +17,15 @@ class Item : public QObject
     Q_PROPERTY(quint64 windowId READ windowId WRITE setWindowId NOTIFY windowIdChanged)
     Q_PROPERTY(bool isLauncher READ isLauncher CONSTANT)
     Q_PROPERTY(bool isTask READ isTask CONSTANT)
+    Q_PROPERTY(bool isAppMenu READ isAppMenu CONSTANT)
+    Q_PROPERTY(bool isTrash READ isTrash CONSTANT)
     Q_PROPERTY(bool isActive READ isActive WRITE setActive NOTIFY isActiveChanged)
     Q_PROPERTY(bool isMinimized READ isMinimized WRITE setMinimized NOTIFY isMinimizedChanged)
     Q_PROPERTY(bool isRunning READ isRunning WRITE setRunning NOTIFY isRunningChanged)
     Q_PROPERTY(int itemIndex READ itemIndex WRITE setItemIndex NOTIFY itemIndexChanged)
 
 public:
-    enum class Kind { Launcher, Task };
+    enum class Kind { Launcher, Task, AppMenu, Trash };
 
     explicit Item(QObject *parent = nullptr) : QObject(parent) {}
     Item(Kind kind, const QString &name, const QString &iconName, const QString &command, quint64 windowId = 0)
@@ -37,6 +39,8 @@ public:
     quint64 windowId() const { return m_windowId; }
     bool isTask() const { return m_kind == Kind::Task; }
     bool isLauncher() const { return m_kind == Kind::Launcher; }
+    bool isAppMenu() const { return m_kind == Kind::AppMenu; }
+    bool isTrash() const { return m_kind == Kind::Trash; }
     bool isActive() const { return m_isActive; }
     bool isMinimized() const { return m_isMinimized; }
     bool isRunning() const { return m_isRunning; }

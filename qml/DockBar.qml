@@ -79,6 +79,27 @@ Item {
 
     ListModel { id: listModel }
 
+    // Context menu state: which item triggered the menu, so the menu
+    // items can show/hide based on the item type. Also used to keep the
+    // dock visible while the menu is open (auto-hide fix).
+    property int contextMenuIndex: -1
+    property var contextMenuItem: null
+
+    function showMenu(item, pt) {
+        contextMenuIndex = item.modelIndex
+        contextMenuItem = item
+        // Keep the dock visible while the menu is open — without this,
+        // the cursor moving to the popup menu causes the HoverHandler to
+        // lose hover, containsMouse goes false, and auto-hide triggers.
+        if (bar.kooldock) bar.kooldock.setDragActive(true)
+        contextMenu.popup(pt)
+    }
+    function hideMenu() {
+        contextMenuItem = null
+        contextMenuIndex = -1
+        if (bar.kooldock) bar.kooldock.setDragActive(false)
+    }
+
     function refreshItems() {
         if (!kooldock || !kooldock.model) return
         const m = kooldock.model
@@ -86,7 +107,9 @@ Item {
         for (let i = 0; i < m.count; i++) {
             const d = m.itemData(i)
             listModel.append({name: d.name, iconName: d.iconName, isTask: d.isTask,
-                             isRunning: d.isRunning, windowId: d.windowId, itemIndex: d.itemIndex, sz: smallSize, ipos: 0})
+                             isLauncher: d.isLauncher, isAppMenu: d.isAppMenu, isTrash: d.isTrash,
+                             isRunning: d.isRunning, windowId: d.windowId, itemIndex: d.itemIndex,
+                             sz: smallSize, ipos: 0})
         }
         layout()
     }
@@ -194,6 +217,9 @@ Item {
             name: model.name
             iconName: model.iconName
             isTask: model.isTask
+            isLauncher: model.isLauncher
+            isAppMenu: model.isAppMenu
+            isTrash: model.isTrash
             isRunning: model.isRunning
             windowId: model.windowId
             modelIndex: model.itemIndex
@@ -223,13 +249,12 @@ Item {
             }
 
             onContextMenuRequested: pt => {
-                if (!bar.kooldock || !model.isTask) return
-                contextMenuLoader.active = true
-                const menu = contextMenuLoader.item
-                if (menu) {
-                    bar.kooldock.windowActions.currentWindow = model.windowId
-                    menu.popup(pt)
-                }
+                if (model.isAppMenu || model.isTrash) return
+                bar.showMenu(delegateItem, pt)
+            }
+
+            onTrashDropped: (urls) => {
+                if (bar.kooldock) bar.kooldock.trashFiles(urls)
             }
 
             // Drag-and-drop: notify the bar when a drag starts, moves, or
@@ -327,26 +352,113 @@ Item {
         }
     }
 
-    Loader {
-        id: contextMenuLoader
-        active: false
-        sourceComponent: Menu {
-            MenuItem { text: i18n("Mi&nimize"); icon.name: "window-minimize"
-                onTriggered: { if (bar.kooldock) bar.kooldock.windowActions.minimize() } }
-            MenuItem { text: i18n("Ma&ximize"); icon.name: "window-maximize"
-                onTriggered: { if (bar.kooldock) bar.kooldock.windowActions.maximize() } }
-            MenuItem { text: i18n("&Close"); icon.name: "window-close"
-                onTriggered: { if (bar.kooldock) bar.kooldock.windowActions.close() } }
+    // Context-sensitive menu for dock items (launchers and tasks).
+    // Items are shown/hidden based on the context menu item's type
+    // (launcher vs task, running vs not, fused vs standalone).
+    Menu {
+        id: contextMenu
+        onClosed: bar.hideMenu()
+
+        // "New Window" — only for launchers (fused or not) to launch a
+        // new instance alongside any running one.
+        MenuItem {
+            text: i18n("&New Window")
+            icon.name: "window-new"
+            visible: contextMenuItem && contextMenuItem.isLauncher
+            onTriggered: {
+                if (bar.kooldock && bar.kooldock.model && contextMenuIndex >= 0)
+                    bar.kooldock.model.newWindow(contextMenuIndex)
+            }
+        }
+
+        // "Open" — for launchers that aren't running.
+        MenuItem {
+            text: i18n("&Open")
+            icon.name: "document-open"
+            visible: contextMenuItem && contextMenuItem.isLauncher && !contextMenuItem.isRunning
+            onTriggered: {
+                if (bar.kooldock && bar.kooldock.model && contextMenuIndex >= 0)
+                    bar.kooldock.model.launch(contextMenuIndex)
+            }
+        }
+
+        MenuSeparator {
+            visible: contextMenuItem && contextMenuItem.isLauncher
+        }
+
+        // Window management — only for running tasks or fused launchers.
+        MenuItem {
+            text: i18n("Mi&nimize")
+            icon.name: "window-minimize"
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId)
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId,
+                    bar.kooldock.windowActions.minimize()
+            }
+        }
+        MenuItem {
+            text: i18n("Ma&ximize")
+            icon.name: "window-maximize"
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.restore()
+                }
+            }
+        }
+        MenuItem {
+            text: i18n("&Close")
+            icon.name: "window-close"
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.close()
+                }
+            }
+        }
+
+        MenuSeparator {
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+        }
+
+        // "Keep in Dock" — for standalone tasks (not fused with a launcher).
+        // Pins the running app as a permanent launcher.
+        MenuItem {
+            text: i18n("&Keep in Dock")
+            icon.name: "pin"
+            visible: contextMenuItem && contextMenuItem.isTask && !contextMenuItem.isLauncher
+            onTriggered: {
+                if (bar.kooldock && bar.kooldock.model && contextMenuItem && contextMenuItem.windowId)
+                    bar.kooldock.model.pinTask(contextMenuItem.windowId)
+            }
+        }
+
+        // "Remove from Dock" — for launchers (fused or not).
+        MenuItem {
+            text: i18n("&Remove from Dock")
+            icon.name: "edit-delete"
+            visible: contextMenuItem && contextMenuItem.isLauncher
+            onTriggered: {
+                if (bar.kooldock && bar.kooldock.model && contextMenuIndex >= 0)
+                    bar.kooldock.model.removeLauncher(contextMenuIndex)
+            }
         }
     }
 
     MouseArea {
         anchors.fill: parent; acceptedButtons: Qt.RightButton
-        onClicked: { if (bar.kooldock) dockMenu.popup() }
+        onClicked: {
+            if (bar.kooldock) bar.kooldock.setDragActive(true)
+            dockMenu.popup()
+        }
     }
 
     Menu {
         id: dockMenu
+        onClosed: { if (bar.kooldock) bar.kooldock.setDragActive(false) }
         MenuItem { text: i18n("Edit &Preferences"); icon.name: "configure"
             onTriggered: { if (bar.kooldock) bar.kooldock.showPreferences() } }
         MenuItem { text: i18n("&Reload Configuration"); icon.name: "view-refresh"

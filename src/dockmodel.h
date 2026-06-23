@@ -35,11 +35,13 @@ public:
     Q_INVOKABLE void activate(int row);
     Q_INVOKABLE void activateWindow(quint64 windowId);
     Q_INVOKABLE void launch(int row);
+    Q_INVOKABLE void newWindow(int row);
     Q_INVOKABLE QVariantMap itemData(int row) const;
     Q_INVOKABLE void addLauncher(const QString &filePath);
     Q_INVOKABLE void removeLauncher(int row);
     Q_INVOKABLE void moveLauncher(int from, int to);
     Q_INVOKABLE bool isLauncher(int row) const;
+    Q_INVOKABLE void pinTask(quint64 windowId);
 
 public Q_SLOTS:
     void reload();
@@ -51,6 +53,8 @@ public Q_SLOTS:
 Q_SIGNALS:
     void countChanged();
     void itemsChanged();
+    void activateAppMenu();
+    void activateTrash();
 
 private Q_SLOTS:
     void onLaunchersChanged();
@@ -61,6 +65,7 @@ private:
     int insertTaskSorted(Item *item);
     bool shouldShowTask(const WindowTasks::TaskData &data) const;
     Item *findLauncherForAppId(const QString &appId) const;
+    QString desktopPathForAppId(const QString &appId) const;
 
     QList<Item *> m_items;
     QHash<quint64, Item *> m_taskItems;
