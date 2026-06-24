@@ -489,8 +489,15 @@ void KoolDock::applyBlur()
             const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
             rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
         }
-        QPainterPath path;
-        path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
+    QPainterPath path;
+    // Add a small margin around the pill so the blur is always pre-computed
+    // before the pill expands into the area during the zoom animation.
+    // Without this, KWin can take a frame to generate the blur for
+    // newly-covered pixels, producing a visible edge flicker on every
+    // zoom step.
+    static constexpr qreal blurMargin = 8.0;
+    rect.adjust(-blurMargin, -blurMargin, blurMargin, blurMargin);
+    path.addRoundedRect(rect, m_blurRadius + blurMargin, m_blurRadius + blurMargin);
         KWindowEffects::enableBlurBehind(m_view, true, QRegion(path.toFillPolygon().toPolygon()));
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);
@@ -647,7 +654,13 @@ void KoolDock::onHideTimer()
     // stays full-size — drag-and-drop from external apps sees the full
     // surface geometry and can enter to trigger expansion.
     applyInputMask(true);
-    KWindowEffects::enableBlurBehind(m_view, false);
+    // Don't disable the blur here: the blur region is already animated
+    // together with the pill via slideTransform.onYChanged →
+    // applyBlur(), so by the end of the 200ms slide-out the blur rect
+    // is off-screen.  Disabling it explicitly races the animation: if
+    // the timer fires a frame before the slide finishes, the blur
+    // disappears while the pill is still visible, producing a one-frame
+    // "background vanishes" flicker every time the dock hides.
 }
 
 void KoolDock::showAppMenu()
