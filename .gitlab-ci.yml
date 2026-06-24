@@ -16,13 +16,16 @@ variables:
   DEBIAN_FRONTEND: noninteractive
   GIT_SUBMODULE_STRATEGY: recursive
 
-# ── Ubuntu 24.04 LTS (Noble) build ──────────────────────────────
-# Compatible with Kubuntu 24.04+ / KDE Plasma 6 / Qt 6.
+# ── Ubuntu 25.04 LTS / KDE Plasma 6 / Qt 6 ────────────────────
+# Compatible with Kubuntu 24.10+ / KDE Plasma 6 / Qt 6 ≥ 6.6.
 # Runs on every push to dev/main and on version tags.
+#
+# Note: Ubuntu 24.04 (Noble) does not ship KF6 in its main repos;
+# 24.10 (Oracular) and 25.04 (Plucky) do.
 
-build:noble:
+build:plucky:
   stage: build
-  image: ubuntu:24.04
+  image: ubuntu:25.04
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "main"
