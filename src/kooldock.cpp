@@ -83,6 +83,29 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
 
     m_tooltipShrinkTimer.setSingleShot(true);
     connect(&m_tooltipShrinkTimer, &QTimer::timeout, this, [this]() {
+        // On vertical edges, shrinking the tooltip extent pulls the
+        // surface's near edge in (LayerShellQt keeps the anchored edge
+        // flush), so if the pointer's current distance from that anchored
+        // edge is already past where the smaller edge will land, applying
+        // the shrink now yanks the surface out from under the pointer —
+        // a real Wayland pointer-leave that reads as "user left" and
+        // re-triggers auto-hide/re-grow, producing an oscillation.
+        // m_pointerDistanceFromEdge is frame-invariant, so this check
+        // holds regardless of surface movement.
+        //
+        // On horizontal edges the tooltip space is pre-reserved in
+        // maxDockShortSize(), so this shrink is a no-op for the window
+        // size and the check would compare against an unchanged short
+        // axis — never diverging, deferring forever.
+        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+        if (vert && m_pointerDistanceFromEdge >= 0) {
+            const int currentShort = m_view ? m_view->width() : 0;
+            const int newShort = currentShort - (m_tooltipExtent - m_pendingTooltipExtent);
+            if (m_pointerDistanceFromEdge >= newShort) {
+                m_tooltipShrinkTimer.start(150);
+                return;
+            }
+        }
         m_tooltipExtent = m_pendingTooltipExtent;
         applyLayerShell();
     });
@@ -269,20 +292,18 @@ void KoolDock::applyLayerShell()
             size.rheight() += dragExpandShort;
         }
     }
-    // Grow the short axis to fit whatever tooltip is currently visible
-    // (set via setTooltipExtent(), driven by DockItem.qml's in-scene
-    // tooltip) — sized for the actual text instead of guessing a fixed
-    // margin, which either wasted space or clipped long names depending
-    // on the edge (on vertical edges the short axis is the tooltip's
-    // *width*, easily 200+px for a long app name; a single constant
-    // could never fit both that and the ~24px needed on horizontal
-    // edges).
+    // On vertical edges, grow the short axis (width) to fit whatever
+    // tooltip is currently visible — the tooltip width varies with the
+    // app name length and can easily be 200+px; a fixed reserve would
+    // waste too much width. On horizontal edges (Top/BottomEdge) the
+    // tooltip height is predictable (single-line text, fixed font size)
+    // and is pre-reserved in maxDockShortSize(), so no dynamic grow is
+    // needed — eliminating the resize removes the one-frame buffer-stretch
+    // flicker the compositor produces when the surface size changes.
     if (m_tooltipExtent > 0) {
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
         if (vert) {
             size.rwidth() += m_tooltipExtent;
-        } else {
-            size.rheight() += m_tooltipExtent;
         }
     }
     // Non-autohide and no zoom active: shrink the window's short axis to
@@ -363,15 +384,26 @@ int KoolDock::maxDockShortSize() const
 {
     // The dock's size along its short axis: the pill's fixed bgHeight
     // band, plus enough room on the overflow side to fit the tallest
-    // possible icon plus its margin. Same for all four edges. The
-    // in-scene tooltip (DockItem.qml) is handled separately and
-    // dynamically by setTooltipExtent()/applyLayerShell() — sized to the
-    // actual text that's currently showing rather than guessed here,
-    // since a single fixed margin can't fit both a ~24px-tall tooltip on
-    // horizontal edges and a 200+px-wide one on vertical edges.
+    // possible icon plus its margin. Same for all four edges.
+    //
+    // Tooltip space is pre-reserved here (rather than added dynamically
+    // via setTooltipExtent/applyLayerShell) so the window never resizes
+    // when a tooltip appears or disappears on horizontal edges (where
+    // the tooltip height is predictable from the font size).  Every
+    // resize on a layer surface causes the compositor to stretch the
+    // previous buffer to the new surface size for one frame — a visible
+    // vertical stretch of every icon — so eliminating the resize
+    // eliminates the flicker.
+    //
+    // On vertical edges (Left/RightEdge) the tooltip width can be much
+    // larger (a long app name can span 200+px) and a fixed reserve
+    // would waste too much width, so the dynamic resize is kept only
+    // there (see applyLayerShell).
     const int bgHeight = KoolDockSettings::dockHeight();
     const int needed = KoolDockSettings::iconSpacing() + KoolDockSettings::bigIconSize() + 4;
-    return qMax(bgHeight, needed);
+    const int tooltipReserve = KoolDockSettings::showNames()
+        ? KoolDockSettings::tooltipSize() * 3 / 2 + 24 : 0;
+    return qMax(bgHeight, needed + tooltipReserve);
 }
 
 int KoolDock::maxDockWidth() const
@@ -589,6 +621,11 @@ void KoolDock::setTooltipExtent(int px)
         m_pendingTooltipExtent = px;
         m_tooltipShrinkTimer.start(150);
     }
+}
+
+void KoolDock::setPointerDistanceFromEdge(qreal distance)
+{
+    m_pointerDistanceFromEdge = distance;
 }
 
 void KoolDock::onHideTimer()

@@ -61,6 +61,12 @@ public Q_SLOTS:
     // against); shrinking is delayed to outlast the tooltip's 150ms
     // fade-out, same reasoning as the hover-driven m_shrinkTimer.
     Q_INVOKABLE void setTooltipExtent(int px);
+    // Pointer's current distance from the screen-anchored edge along the
+    // dock's short axis (always >= 0 while hovering, regardless of which
+    // edge the dock is on — frame-invariant, unlike a raw local
+    // coordinate). -1 while not hovering. See its use in the tooltip
+    // shrink timer for why this needs to be frame-invariant.
+    Q_INVOKABLE void setPointerDistanceFromEdge(qreal distance);
     Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
     Q_INVOKABLE void showAppMenu();
     Q_INVOKABLE void openTrash();
@@ -109,6 +115,7 @@ private:
     bool m_debugBounds = false;
     int m_tooltipExtent = 0;
     int m_pendingTooltipExtent = 0;
+    qreal m_pointerDistanceFromEdge = -1;
     qreal m_blurPos = 0;
     qreal m_blurLength = 0;
     qreal m_blurShortOffset = 0;

@@ -73,6 +73,19 @@ Item {
             if (kooldock) kooldock.setTooltipExtent(dockBar.tooltipExtent)
         }
     }
+    // Pointer's distance from the screen-anchored edge along the dock's
+    // short axis — unlike a raw local coordinate, this stays correct
+    // regardless of which edge the window's resize-driven repositioning
+    // moves (see KoolDock::setPointerDistanceFromEdge()'s use in the
+    // tooltip shrink timer, which needs exactly this to avoid shrinking
+    // the surface out from under a still-present pointer).
+    readonly property bool nearAnchor: edge === Qt.TopEdge || edge === Qt.LeftEdge
+    readonly property real pointerDistanceFromEdge: hoverHandler.hovered
+        ? (nearAnchor ? (vertical ? hoverHandler.point.position.x : hoverHandler.point.position.y)
+                      : (vertical ? root.width - hoverHandler.point.position.x
+                                  : root.height - hoverHandler.point.position.y))
+        : -1
+    onPointerDistanceFromEdgeChanged: { if (kooldock) kooldock.setPointerDistanceFromEdge(pointerDistanceFromEdge) }
 
     // bg's x/y bind off its own width/height (see below), so a single
     // animated width/height change fires onWidthChanged and onXChanged

@@ -22,6 +22,21 @@ Item {
     property real globalMousePos: 0
     property real globalCrossPos: 0
 
+    // Cached copy of windowCrossExtent from the last time globalCrossPos
+    // was updated. point.position only changes on actual pointer motion
+    // (a compositor event), but windowCrossExtent (root.height/width)
+    // changes on window resize — e.g. when a tooltip grows the window.
+    // Between the resize and the next pointer event, globalCrossPos is
+    // stale (old window-local coordinate) while windowCrossExtent is new.
+    // Using them together in the cross-axis containsMouse check makes the
+    // bound shift (newExtent - hoverSize) while the position doesn't,
+    // producing a false "cursor left the dock" for a frame — which
+    // triggers auto-hide/re-grow flicker. cachedCrossExtent stays
+    // consistent with the (possibly stale) globalCrossPos, so the check
+    // is stable across resizes. See layout() for the update logic.
+    property real lastGlobalCrossPos: -100001
+    property real cachedCrossExtent: 0
+
     property bool containsMouse: false
     property real contentLength: 0
     // Relayed up from whichever DockItem currently has a tooltip showing
@@ -30,12 +45,11 @@ Item {
     // ever visible at a time, so "last write wins" is correct here.
     property real tooltipExtent: 0
     // Largest rendered icon size from the *last* layout() pass — used to
-    // size the cross-axis "still hovering" margin below. Read before this
-    // frame's pass overwrites it, same reasoning as contentLength above:
-    // a worst-case (bigSize) margin would stay exactly as wide as the
-    // window's reserved overflow even when nothing is actually zoomed
-    // that big right now, making blur-out feel like it waits for the
-    // cursor to leave the whole window instead of just the current icon.
+    // size the cross-axis *entry* margin in layout() (the zone the cursor
+    // must be within to trigger hover when not already hovering). Read
+    // before this frame's pass overwrites it, same reasoning as
+    // contentLength above. The "stay" margin (once already hovering) uses
+    // bigSize instead — see the hysteresis comment in layout().
     property real lastMaxIconSize: smallSize
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
@@ -179,19 +193,44 @@ Item {
             ? (globalCrossPos > -crossMargin && globalCrossPos < bar.width + crossMargin)
             : (globalCrossPos > -crossMargin && globalCrossPos < bar.height + crossMargin)
         // For the short-axis check, the icon zone extends from the anchored
-        // screen edge outward by lastMaxIconSize+spacing — the *currently*
-        // tallest rendered icon, not the theoretical bigSize max, so the
-        // "still hovering" margin shrinks back along with the icons
-        // instead of always reserving room for a full zoom that may not
-        // be happening right now. For Top/LeftEdge the edge is at
-        // coordinate 0; for Bottom/RightEdge the edge is at
-        // windowCrossExtent.
+        // screen edge outward by crossHoverSize+spacing. Hysteresis on the
+        // hover margin: once containsMouse is true, use bigSize (the
+        // maximum possible icon size) so the zone can't shrink below the
+        // cursor when icons unzoom — e.g. when the cursor moves between
+        // icons along the long axis, the previously-zoomed icon collapses
+        // and lastMaxIconSize drops, which without hysteresis makes the
+        // hover zone retract past a cursor that was near the top of that
+        // icon. containsMouse flips false for a few frames until the cursor
+        // reaches the next icon and zooms it again, producing a visible
+        // up/down flicker (and, in autohide, triggering the hide timer).
+        // When containsMouse is false, keep lastMaxIconSize for a
+        // responsive entry zone — the cursor must be within the current
+        // icon height to trigger hover, not the theoretical max. For
+        // Top/LeftEdge the edge is at coordinate 0; for Bottom/RightEdge
+        // the edge is at cachedCrossExtent.
+        //
+        // cachedCrossExtent (not the live windowCrossExtent) is used here
+        // because a tooltip grow resizes the window along this axis: the
+        // compositor grows the surface away from the anchored edge, so
+        // root.height updates immediately but point.position.y — the
+        // cursor's local coordinate — doesn't change until the next
+        // pointer-motion event arrives. Using the new extent with the
+        // stale position shifts the bound upward, making the check fail
+        // for a frame even though the cursor never moved relative to the
+        // anchored edge. cachedCrossExtent is only refreshed when
+        // globalCrossPos actually changes (pointer moved), so it stays
+        // consistent with the (possibly stale) position.
         const atTopOrLeft = edge === Qt.TopEdge || edge === Qt.LeftEdge
+        if (globalCrossPos !== bar.lastGlobalCrossPos) {
+            bar.lastGlobalCrossPos = globalCrossPos
+            bar.cachedCrossExtent = windowCrossExtent
+        }
+        const crossHoverSize = bar.containsMouse ? bar.bigSize : bar.lastMaxIconSize
         bar.containsMouse = inLongAxis && (
             atTopOrLeft
-                ? (globalCrossPos > -crossMargin && globalCrossPos < bar.lastMaxIconSize + spacing + crossMargin)
-                : (globalCrossPos > windowCrossExtent - bar.lastMaxIconSize - spacing - crossMargin &&
-                   globalCrossPos < windowCrossExtent + crossMargin))
+                ? (globalCrossPos > -crossMargin && globalCrossPos < crossHoverSize + spacing + crossMargin)
+                : (globalCrossPos > bar.cachedCrossExtent - crossHoverSize - spacing - crossMargin &&
+                   globalCrossPos < bar.cachedCrossExtent + crossMargin))
 
         // Step 1: sizes from a parabola centered at the mouse, iterated a
         // few times against the running center estimate. Gated by both
@@ -245,9 +284,9 @@ Item {
         // the background pill to hug the icons, macOS-style.
         bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
 
-        // Feeds next frame's cross-axis containsMouse margin above — see
-        // the property declaration for why this needs to track the
-        // current zoom instead of staying pinned to bigSize.
+        // Feeds next frame's cross-axis entry margin above — see the
+        // property declaration for why this needs to track the current
+        // zoom instead of staying pinned to bigSize.
         bar.lastMaxIconSize = Math.max(smallSize, ...sizes)
 
         for (let i = 0; i < N; i++) {
