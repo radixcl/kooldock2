@@ -349,13 +349,24 @@ void KoolDock::applyLayerShell()
     }
 
     using L = LayerShellQt::Window;
-    L::Anchors anchors;
+    // Anchor to two perpendicular edges so the compositor can't shift the
+    // window away from the physical screen corner when other panels (e.g.
+    // the KDE bottom panel) have their own exclusive zones. Without the
+    // second anchor the compositor may slide the surface along the
+    // perpendicular axis to avoid overlapping other panels' reserved space.
+    L::Anchors anchors{L::AnchorNone};
     switch (screenEdge()) {
     case Qt::BottomEdge: anchors = L::AnchorBottom; break;
     case Qt::TopEdge:    anchors = L::AnchorTop; break;
     case Qt::LeftEdge:   anchors = L::AnchorLeft; break;
     case Qt::RightEdge:  anchors = L::AnchorRight; break;
     }
+    // Lock the perpendicular axis: horizontal docks (top/bottom) lock to
+    // the left edge; vertical docks (left/right) lock to the top edge.
+    if (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge)
+        anchors |= L::AnchorTop;
+    else
+        anchors |= L::AnchorLeft;
     m_layer->setAnchors(anchors);
     m_layer->setLayer(L::LayerTop);
     m_layer->setKeyboardInteractivity(L::KeyboardInteractivityOnDemand);
@@ -394,28 +405,28 @@ void KoolDock::applyLayerShell()
     }
     m_layer->setMargins(margins);
 
-    const int bgHeight = KoolDockSettings::dockHeight();
-    const bool overlay = autoHide() || edgeMargin != 0;
-    // Window is always full-screen.  The pill is positioned at the
-    // anchored edge by QML bindings; rest is transparent.  Input is
-    // restricted to the pill area / trigger strip by applyInputMask().
-    QSize size(maxDockWidth(), maxDockHeight());
+    const QSize size(maxDockWidth(), maxDockHeight());
+    if (m_debugBounds) qDebug() << "applyLayerShell: edge=" << screenEdge()
+        << "screen=" << (m_view->screen() ? m_view->screen()->name() : QStringLiteral("null"))
+        << "screenSize=" << (m_view->screen() ? m_view->screen()->size() : QSize())
+        << "desiredSize=" << size
+        << "edgeMargin=" << edgeMargin
+        << "exclusiveZone=0";
+
+    // Window is always full-screen — the pill is positioned at the anchored
+    // edge by QML and the rest is transparent. Setting exclusive zone to 0
+    // prevents the compositor from squeezing the window when another panel
+    // (e.g. the KDE taskbar) has its own exclusive zone at the same edge,
+    // which would make parent.width/height in QML ≠ screen size and
+    // throw the pill off-center. The dock is at LayerTop so it renders
+    // above other surfaces regardless of exclusive zone.
 #ifdef LAYERSHELLQT_HAS_SET_DESIRED_SIZE
     m_layer->setDesiredSize(size);
 #else
     m_view->setMinimumSize(size);
     m_view->setMaximumSize(size);
 #endif
-    m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
-    m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
-    if (!overlay) {
-        switch (screenEdge()) {
-        case Qt::BottomEdge: m_layer->setExclusiveEdge(L::AnchorBottom); break;
-        case Qt::TopEdge:    m_layer->setExclusiveEdge(L::AnchorTop); break;
-        case Qt::LeftEdge:   m_layer->setExclusiveEdge(L::AnchorLeft); break;
-        case Qt::RightEdge:  m_layer->setExclusiveEdge(L::AnchorRight); break;
-        }
-    }
+    m_layer->setExclusiveZone(0);
 
     applyInputMask(!m_containsMouse);
 }
