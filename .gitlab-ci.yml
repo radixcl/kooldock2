@@ -62,6 +62,7 @@ build:plucky:
         libkf6i18n-dev
         libkf6colorscheme-dev
         liblayershellqtinterface-dev
+        plasma-wayland-protocols
         libwayland-dev
         libxcb1-dev
         libxcb-util-dev
