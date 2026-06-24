@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
 
@@ -119,9 +120,25 @@ Item {
                         Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         Rectangle {
+                            id: bgSwatch
                             implicitWidth: 22; implicitHeight: 22; radius: 4
                             color: bgColorField.text
                             border.color: Qt.rgba(0, 0, 0, 0.15)
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: bgColorDialog.open()
+                            }
+                            ColorDialog {
+                                id: bgColorDialog
+                                selectedColor: bgColorField.text
+                                title: i18n("Select Background Color")
+                                onAccepted: {
+                                    bgColorField.text = selectedColor
+                                    if (settings) settings.backgroundColor = selectedColor
+                                }
+                            }
                         }
                         TextField {
                             id: bgColorField
@@ -198,6 +215,22 @@ Item {
                             implicitWidth: 22; implicitHeight: 22; radius: 4
                             color: borderColorField.text
                             border.color: Qt.rgba(0, 0, 0, 0.15)
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: borderColorDialog.open()
+                                ToolTip.text: i18n("Pick a color…")
+                                ToolTip.visible: hovered
+                            }
+                            ColorDialog {
+                                id: borderColorDialog
+                                selectedColor: borderColorField.text
+                                title: i18n("Select Border Color")
+                                onAccepted: {
+                                    borderColorField.text = selectedColor
+                                    if (settings) settings.borderColor = selectedColor
+                                }
+                            }
                         }
                         TextField {
                             id: borderColorField
@@ -367,6 +400,22 @@ Item {
                             implicitWidth: 22; implicitHeight: 22; radius: 4
                             color: dotColorField.text
                             border.color: Qt.rgba(0, 0, 0, 0.15)
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: dotColorDialog.open()
+                                ToolTip.text: i18n("Pick a color…")
+                                ToolTip.visible: hovered
+                            }
+                            ColorDialog {
+                                id: dotColorDialog
+                                selectedColor: dotColorField.text
+                                title: i18n("Select Indicator Color")
+                                onAccepted: {
+                                    dotColorField.text = selectedColor
+                                    if (settings) settings.taskIndicatorColor = selectedColor
+                                }
+                            }
                         }
                         TextField {
                             id: dotColorField
@@ -440,6 +489,22 @@ Item {
                             implicitWidth: 22; implicitHeight: 22; radius: 4
                             color: ttColorField.text
                             border.color: Qt.rgba(0, 0, 0, 0.15)
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: ttColorDialog.open()
+                                ToolTip.text: i18n("Pick a color…")
+                                ToolTip.visible: hovered
+                            }
+                            ColorDialog {
+                                id: ttColorDialog
+                                selectedColor: ttColorField.text
+                                title: i18n("Select Tooltip Text Color")
+                                onAccepted: {
+                                    ttColorField.text = selectedColor
+                                    if (settings) settings.tooltipColor = selectedColor
+                                }
+                            }
                         }
                         TextField {
                             id: ttColorField
@@ -456,6 +521,22 @@ Item {
                             implicitWidth: 22; implicitHeight: 22; radius: 4
                             color: ttShadowField.text
                             border.color: Qt.rgba(0, 0, 0, 0.15)
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: ttShadowDialog.open()
+                                ToolTip.text: i18n("Pick a color…")
+                                ToolTip.visible: hovered
+                            }
+                            ColorDialog {
+                                id: ttShadowDialog
+                                selectedColor: ttShadowField.text
+                                title: i18n("Select Tooltip Shadow Color")
+                                onAccepted: {
+                                    ttShadowField.text = selectedColor
+                                    if (settings) settings.tooltipShadowColor = selectedColor
+                                }
+                            }
                         }
                         TextField {
                             id: ttShadowField
