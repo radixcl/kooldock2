@@ -32,13 +32,14 @@ class KoolDock : public QObject
     Q_PROPERTY(bool dragActive READ dragActive NOTIFY dragActiveChanged)
     Q_PROPERTY(QString themeName READ themeName NOTIFY themeNameChanged)
     Q_PROPERTY(bool trashIsEmpty READ isTrashEmpty NOTIFY trashIsEmptyChanged)
+    Q_PROPERTY(bool debugBounds READ debugBounds CONSTANT)
 
 public:
-    explicit KoolDock(QObject *parent = nullptr);
+    explicit KoolDock(QObject *parent = nullptr, bool debugBounds = false);
     ~KoolDock() override;
 
     static KoolDock *instance();
-    static void create(QObject *parent, bool showPreferences);
+    static void create(QObject *parent, bool showPreferences, bool debugBounds = false);
 
     DockModel *model() const;
     WindowActions *windowActions() const;
@@ -47,6 +48,7 @@ public:
     bool containsMouse() const;
     bool dragActive() const;
     bool isTrashEmpty() const;
+    bool debugBounds() const;
     QString themeName() const;
 
 public Q_SLOTS:
@@ -98,11 +100,13 @@ private:
     bool m_containsMouse = false;
     bool m_dragActive = false;
     bool m_dragExpanded = false;
+    bool m_debugBounds = false;
     qreal m_blurPos = 0;
     qreal m_blurLength = 0;
     qreal m_blurShortOffset = 0;
     qreal m_blurRadius = 0;
     QTimer m_hideTimer;
+    QTimer m_shrinkTimer;
     QTimer m_dragHeartbeat;
     QTimer m_trashCheckTimer;
     bool m_trashIsEmpty = true;

@@ -52,21 +52,22 @@ KoolDock *KoolDock::instance()
     return s_instance;
 }
 
-void KoolDock::create(QObject *parent, bool showPreferences)
+void KoolDock::create(QObject *parent, bool showPreferences, bool debugBounds)
 {
     Q_ASSERT(!s_instance);
-    s_instance = new KoolDock(parent);
+    s_instance = new KoolDock(parent, debugBounds);
     if (showPreferences) {
         QTimer::singleShot(0, s_instance, &KoolDock::showPreferences);
     }
 }
 
-KoolDock::KoolDock(QObject *parent)
+KoolDock::KoolDock(QObject *parent, bool debugBounds)
     : QObject(parent)
     , m_tasks(new WindowTasks(this))
     , m_model(new DockModel(m_tasks, this))
     , m_windowActions(new WindowActions(m_tasks, this))
     , m_config(KSharedConfig::openConfig(QStringLiteral("kooldockrc")))
+    , m_debugBounds(debugBounds)
 {
     connect(m_tasks, &WindowTasks::windowAdded, m_model, &DockModel::onWindowAdded);
     connect(m_tasks, &WindowTasks::windowRemoved, m_model, &DockModel::onWindowRemoved);
@@ -76,6 +77,9 @@ KoolDock::KoolDock(QObject *parent)
 
     m_hideTimer.setSingleShot(true);
     connect(&m_hideTimer, &QTimer::timeout, this, &KoolDock::onHideTimer);
+
+    m_shrinkTimer.setSingleShot(true);
+    connect(&m_shrinkTimer, &QTimer::timeout, this, &KoolDock::applyLayerShell);
 
     m_dragHeartbeat.setSingleShot(true);
     connect(&m_dragHeartbeat, &QTimer::timeout, this, [this]() {
@@ -124,6 +128,7 @@ Qt::Edge KoolDock::screenEdge() const
 bool KoolDock::autoHide() const { return KoolDockSettings::autoHide(); }
 bool KoolDock::containsMouse() const { return m_containsMouse; }
 bool KoolDock::dragActive() const { return m_dragActive; }
+bool KoolDock::debugBounds() const { return m_debugBounds; }
 
 void KoolDock::setDragActive(bool active)
 {
@@ -512,8 +517,20 @@ void KoolDock::setContainsMouse(bool contains)
     // cursor is outside, and to the full size (with zoom overflow room)
     // when the cursor enters. This keeps the transparent overflow area
     // from intercepting clicks on windows above the dock.
+    //
+    // Growing happens immediately, so the icons have room to zoom into.
+    // Shrinking is delayed by zoomSpeed instead: the Wayland surface
+    // resize is an instant hard cut that no QML Behavior can animate, so
+    // shrinking right away would clip the icons mid zoom-out — they
+    // haven't visually shrunk back to restingSize yet. Waiting lets that
+    // animation finish first.
     if (m_layer && !KoolDockSettings::autoHide() && !m_dragExpanded && !m_dragActive) {
-        applyLayerShell();
+        if (contains) {
+            m_shrinkTimer.stop();
+            applyLayerShell();
+        } else {
+            m_shrinkTimer.start(KoolDockSettings::zoomSpeed());
+        }
     }
     Q_EMIT containsMouseChanged();
 }

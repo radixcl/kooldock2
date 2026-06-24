@@ -509,6 +509,52 @@ QString DockModel::desktopPathForAppId(const QString &appId) const
     return {};
 }
 
+QString DockModel::desktopFileForRow(int row) const
+{
+    if (row < 0 || row >= m_items.size()) return {};
+    Item *item = m_items.at(row);
+    if (!item->desktopFile().isEmpty()) return item->desktopFile();
+    // Standalone tasks (not pinned) don't carry a desktopFile — resolve
+    // one on the fly from the appId, same as pinTask()'s lookup, just
+    // without persisting it onto the item.
+    if (item->isTask()) return desktopPathForAppId(item->appId());
+    return {};
+}
+
+QVariantList DockModel::desktopActions(int row) const
+{
+    const QString desktopFile = desktopFileForRow(row);
+    if (desktopFile.isEmpty()) return {};
+
+    KDesktopFile df(desktopFile);
+    QVariantList result;
+    for (const QString &actionId : df.readActions()) {
+        const KConfigGroup group = df.actionGroup(actionId);
+        if (!group.isValid() || group.readEntry(QStringLiteral("Exec"), QString()).isEmpty()) continue;
+        result.append(QVariantMap{
+            {QStringLiteral("id"), actionId},
+            {QStringLiteral("name"), group.readEntry(QStringLiteral("Name"), actionId)},
+            {QStringLiteral("iconName"), group.readEntry(QStringLiteral("Icon"), QString())},
+        });
+    }
+    return result;
+}
+
+void DockModel::triggerDesktopAction(int row, const QString &actionId)
+{
+    const QString desktopFile = desktopFileForRow(row);
+    if (desktopFile.isEmpty()) return;
+
+    KDesktopFile df(desktopFile);
+    const KConfigGroup group = df.actionGroup(actionId);
+    const QString exec = group.readEntry(QStringLiteral("Exec"), QString());
+    if (exec.isEmpty()) return;
+
+    auto *job = new KIO::CommandLauncherJob(exec);
+    job->setUiDelegate(nullptr);
+    job->start();
+}
+
 void DockModel::pinTask(quint64 windowId)
 {
     // "Keep in Dock": resolve the running task's appId to a .desktop file

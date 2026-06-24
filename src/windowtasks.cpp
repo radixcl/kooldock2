@@ -49,6 +49,11 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
         data.skipTaskbar = waylandData.skipTaskbar;
         data.skipSwitcher = waylandData.skipSwitcher;
         data.onAllDesktops = waylandData.onAllDesktops;
+        data.maximized = waylandData.maximized;
+        data.keepAbove = waylandData.keepAbove;
+        data.keepBelow = waylandData.keepBelow;
+        data.fullscreen = waylandData.fullscreen;
+        data.shaded = waylandData.shaded;
         return data;
     }
 
@@ -78,6 +83,11 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
     data.skipSwitcher = info.state() & NET::SkipSwitcher;
     data.onAllDesktops = (info.desktop() == NET::OnAllDesktops);
     data.desktop = info.desktop();
+    data.maximized = info.state() & NET::Max;
+    data.keepAbove = info.state() & NET::KeepAbove;
+    data.keepBelow = info.state() & NET::KeepBelow;
+    data.fullscreen = info.state() & NET::FullScreen;
+    data.shaded = info.state() & NET::Shaded;
     return data;
 }
 
@@ -112,6 +122,16 @@ void WindowTasks::requestClose(quint64 windowId)
     if (m_isX11) {
         NETRootInfo ri(x11Connection(), NET::CloseWindow);
         ri.closeWindowRequest(static_cast<xcb_window_t>(windowId));
+    }
+}
+
+void WindowTasks::requestToggleState(quint64 windowId, uint32_t bit)
+{
+    // Wayland-only: the X11 state toggles (WindowActions::maximize() etc.)
+    // already have their own KX11Extras-based implementation and never
+    // call this.
+    if (m_waylandTasks) {
+        m_waylandTasks->requestToggleState(windowId, bit);
     }
 }
 

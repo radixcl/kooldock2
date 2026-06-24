@@ -58,8 +58,11 @@ int main(int argc, char *argv[])
         i18n("Show configuration window on start"));
     QCommandLineOption killOption(QStringList() << QStringLiteral("k") << QStringLiteral("kill"),
         i18n("Kill all running kooldock2 instances"));
+    QCommandLineOption debugBoundsOption(QStringList() << QStringLiteral("d") << QStringLiteral("debug-bounds"),
+        i18n("Draw the dock window's real (otherwise invisible) bounds, for debugging hover/resize behavior"));
     parser.addOption(optionsOption);
     parser.addOption(killOption);
+    parser.addOption(debugBoundsOption);
     aboutData.setupCommandLine(&parser);
     parser.process(app);
 
@@ -86,7 +89,7 @@ int main(int argc, char *argv[])
                          }
                      });
 
-    KoolDock::create(&app, parser.isSet(optionsOption));
+    KoolDock::create(&app, parser.isSet(optionsOption), parser.isSet(debugBoundsOption));
 
     return app.exec();
 }

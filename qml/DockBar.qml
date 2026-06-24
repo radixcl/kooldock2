@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQml
 
 Item {
     id: bar
@@ -23,6 +24,14 @@ Item {
 
     property bool containsMouse: false
     property real contentLength: 0
+    // Largest rendered icon size from the *last* layout() pass — used to
+    // size the cross-axis "still hovering" margin below. Read before this
+    // frame's pass overwrites it, same reasoning as contentLength above:
+    // a worst-case (bigSize) margin would stay exactly as wide as the
+    // window's reserved overflow even when nothing is actually zoomed
+    // that big right now, making blur-out feel like it waits for the
+    // cursor to leave the whole window instead of just the current icon.
+    property real lastMaxIconSize: smallSize
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     // Geometry, fed by Main.qml from settings — defaults here only matter
@@ -88,6 +97,12 @@ Item {
     // items can show/hide based on the item type.
     property int contextMenuIndex: -1
     property var contextMenuItem: null
+    // Point-in-time window state (maximized/keepAbove/.../onAllDesktops)
+    // and per-app Desktop Actions, fetched fresh each time the menu opens
+    // (see showMenu()) rather than kept as live model state — these are
+    // only ever read while the menu is visible.
+    property var contextMenuState: ({})
+    property var contextMenuActions: []
 
     // True while any menu (context menu or dock-wide right-click menu) is
     // visible.  Main.qml feeds this into containsMouse so the dock stays
@@ -99,6 +114,10 @@ Item {
     function showMenu(item, pt) {
         contextMenuIndex = item.modelIndex
         contextMenuItem = item
+        contextMenuState = (item.windowId && bar.kooldock)
+            ? bar.kooldock.windowActions.queryState(item.windowId) : ({})
+        contextMenuActions = ((item.isLauncher || item.isTask) && bar.kooldock && bar.kooldock.model)
+            ? bar.kooldock.model.desktopActions(item.modelIndex) : []
         contextMenu.popup(pt)
     }
     function hideMenu() {
@@ -155,14 +174,18 @@ Item {
             ? (globalCrossPos > -crossMargin && globalCrossPos < bar.width + crossMargin)
             : (globalCrossPos > -crossMargin && globalCrossPos < bar.height + crossMargin)
         // For the short-axis check, the icon zone extends from the anchored
-        // screen edge outward by bigSize+spacing (the tallest possible
-        // zoomed icon). For Top/LeftEdge the edge is at coordinate 0; for
-        // Bottom/RightEdge the edge is at windowCrossExtent.
+        // screen edge outward by lastMaxIconSize+spacing — the *currently*
+        // tallest rendered icon, not the theoretical bigSize max, so the
+        // "still hovering" margin shrinks back along with the icons
+        // instead of always reserving room for a full zoom that may not
+        // be happening right now. For Top/LeftEdge the edge is at
+        // coordinate 0; for Bottom/RightEdge the edge is at
+        // windowCrossExtent.
         const atTopOrLeft = edge === Qt.TopEdge || edge === Qt.LeftEdge
         bar.containsMouse = inLongAxis && (
             atTopOrLeft
-                ? (globalCrossPos > -crossMargin && globalCrossPos < bigSize + spacing + crossMargin)
-                : (globalCrossPos > windowCrossExtent - bigSize - spacing - crossMargin &&
+                ? (globalCrossPos > -crossMargin && globalCrossPos < bar.lastMaxIconSize + spacing + crossMargin)
+                : (globalCrossPos > windowCrossExtent - bar.lastMaxIconSize - spacing - crossMargin &&
                    globalCrossPos < windowCrossExtent + crossMargin))
 
         // Step 1: sizes from a parabola centered at the mouse, iterated a
@@ -216,6 +239,11 @@ Item {
         // including the leading/trailing spacing — used by Main.qml to grow
         // the background pill to hug the icons, macOS-style.
         bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
+
+        // Feeds next frame's cross-axis containsMouse margin above — see
+        // the property declaration for why this needs to track the
+        // current zoom instead of staying pinned to bigSize.
+        bar.lastMaxIconSize = Math.max(smallSize, ...sizes)
 
         for (let i = 0; i < N; i++) {
             const pos = centers[i] - sizes[i] / 2
@@ -508,8 +536,27 @@ Item {
             }
         }
 
+        // Per-app Desktop Actions (e.g. LibreWolf's "Open a New Private
+        // Window") — dynamic, populated in showMenu() right before the
+        // menu opens. Instantiator is the standard way to add a variable
+        // number of MenuItems to a Menu in QML.
+        Instantiator {
+            model: bar.contextMenuActions
+            delegate: MenuItem {
+                required property var modelData
+                text: modelData.name
+                icon.name: modelData.iconName.length > 0 ? modelData.iconName : ""
+                onTriggered: {
+                    if (bar.kooldock && bar.kooldock.model && contextMenuIndex >= 0)
+                        bar.kooldock.model.triggerDesktopAction(contextMenuIndex, modelData.id)
+                }
+            }
+            onObjectAdded: (index, object) => contextMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => contextMenu.removeItem(object)
+        }
+
         MenuSeparator {
-            visible: contextMenuItem && contextMenuItem.isLauncher
+            visible: contextMenuItem && (contextMenuItem.isLauncher || bar.contextMenuActions.length > 0)
         }
 
         // Window management — only for running tasks or fused launchers.
@@ -526,14 +573,83 @@ Item {
         MenuItem {
             text: i18n("Ma&ximize")
             icon.name: "window-maximize"
+            checkable: true
+            checked: !!bar.contextMenuState.maximized
             visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
             onTriggered: {
                 if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
                     bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
-                    bar.kooldock.windowActions.restore()
+                    bar.kooldock.windowActions.maximize()
                 }
             }
         }
+
+        // "More Actions" — window states the Wayland protocol exposes via
+        // set_state (plasma-window-management.xml), wired up through
+        // WindowActions just like Minimize/Maximize/Close above.
+        Menu {
+            id: moreActionsMenu
+            title: i18n("&More Actions")
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+
+            MenuItem {
+                text: i18n("Keep &Above Others")
+                checkable: true
+                checked: !!bar.contextMenuState.keepAbove
+                onTriggered: {
+                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                        bar.kooldock.windowActions.toggleKeepAbove()
+                    }
+                }
+            }
+            MenuItem {
+                text: i18n("Keep &Below Others")
+                checkable: true
+                checked: !!bar.contextMenuState.keepBelow
+                onTriggered: {
+                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                        bar.kooldock.windowActions.toggleKeepBelow()
+                    }
+                }
+            }
+            MenuItem {
+                text: i18n("&Fullscreen")
+                checkable: true
+                checked: !!bar.contextMenuState.fullscreen
+                onTriggered: {
+                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                        bar.kooldock.windowActions.toggleFullscreen()
+                    }
+                }
+            }
+            MenuItem {
+                text: i18n("Sh&ade")
+                checkable: true
+                checked: !!bar.contextMenuState.shaded
+                onTriggered: {
+                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                        bar.kooldock.windowActions.shade()
+                    }
+                }
+            }
+            MenuSeparator {}
+            MenuItem {
+                text: i18n("&On All Desktops")
+                checkable: true
+                checked: !!bar.contextMenuState.onAllDesktops
+                onTriggered: {
+                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                        bar.kooldock.windowActions.toggleOnAllDesktops()
+                    }
+                }
+            }
+        }
+
         MenuItem {
             text: i18n("&Close")
             icon.name: "window-close"

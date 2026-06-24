@@ -43,6 +43,11 @@ public:
     Q_INVOKABLE void moveLauncher(int from, int to);
     Q_INVOKABLE bool isLauncher(int row) const;
     Q_INVOKABLE void pinTask(quint64 windowId);
+    // Per-app "Desktop Actions" ([Desktop Action X] groups in the .desktop
+    // file, e.g. Firefox/LibreWolf's "New Private Window") — queried fresh
+    // each time the context menu opens, not part of the persistent model.
+    Q_INVOKABLE QVariantList desktopActions(int row) const;
+    Q_INVOKABLE void triggerDesktopAction(int row, const QString &actionId);
 
 public Q_SLOTS:
     void reload();
@@ -72,6 +77,7 @@ private:
     bool shouldShowTask(const WindowTasks::TaskData &data) const;
     Item *findLauncherForAppId(const QString &appId) const;
     QString desktopPathForAppId(const QString &appId) const;
+    QString desktopFileForRow(int row) const;
 
     QList<Item *> m_items;
     QHash<quint64, Item *> m_taskItems;

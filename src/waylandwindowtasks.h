@@ -31,6 +31,10 @@ public:
     void requestActivate();
     void requestMinimize();
     void requestClose();
+    // Generic toggle for any single state bit (maximized, fullscreen,
+    // keep_above, keep_below, shaded, on_all_desktops, ...) — flips it
+    // relative to the window's last known state.
+    void requestToggleState(uint32_t bit);
 
 Q_SIGNALS:
     void infoChanged();
@@ -135,6 +139,11 @@ public:
         bool skipTaskbar = false;
         bool skipSwitcher = false;
         bool onAllDesktops = false;
+        bool maximized = false;
+        bool keepAbove = false;
+        bool keepBelow = false;
+        bool fullscreen = false;
+        bool shaded = false;
     };
 
     void start();
@@ -147,6 +156,7 @@ public:
     void requestActivate(quint64 windowId);
     void requestMinimize(quint64 windowId);
     void requestClose(quint64 windowId);
+    void requestToggleState(quint64 windowId, uint32_t bit);
 
 Q_SIGNALS:
     void windowAdded(quint64 windowId);

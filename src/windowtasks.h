@@ -22,6 +22,19 @@ public:
 
     bool isAvailable() const;
 
+    // Mirrors the relevant org_kde_plasma_window_management::state bits
+    // (plasma-window-management.xml) for use with requestToggleState(),
+    // kept here so callers (WindowActions) don't need to depend on the
+    // generated Wayland protocol header directly.
+    enum StateBit : uint32_t {
+        StateMaximized = 0x4,
+        StateFullscreen = 0x8,
+        StateKeepAbove = 0x10,
+        StateKeepBelow = 0x20,
+        StateOnAllDesktops = 0x40,
+        StateShaded = 0x4000,
+    };
+
     struct TaskData {
         quint64 windowId = 0;
         QString title;
@@ -33,12 +46,18 @@ public:
         bool skipSwitcher = false;
         bool onAllDesktops = false;
         int desktop = -1;
+        bool maximized = false;
+        bool keepAbove = false;
+        bool keepBelow = false;
+        bool fullscreen = false;
+        bool shaded = false;
     };
     QList<quint64> windowIds() const;
     quint64 activeWindow() const;
     TaskData taskData(quint64 windowId) const;
 
     void requestActivate(quint64 windowId);
+    void requestToggleState(quint64 windowId, uint32_t bit);
     void requestMinimize(quint64 windowId);
     void requestClose(quint64 windowId);
 

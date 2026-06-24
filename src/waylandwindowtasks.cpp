@@ -51,6 +51,15 @@ void PlasmaWindow::requestClose()
     close();
 }
 
+void PlasmaWindow::requestToggleState(uint32_t bit)
+{
+    if (!object()) {
+        return;
+    }
+    const bool isSet = m_info.state & bit;
+    set_state(bit, isSet ? 0 : bit);
+}
+
 void PlasmaWindow::org_kde_plasma_window_title_changed(const QString &title)
 {
     if (m_info.title == title) {
@@ -414,6 +423,11 @@ WaylandWindowTasks::TaskData WaylandWindowTasks::taskData(quint64 windowId) cons
     data.skipTaskbar = info.state & QtWayland::org_kde_plasma_window_management::state_skiptaskbar;
     data.skipSwitcher = info.state & QtWayland::org_kde_plasma_window_management::state_skipswitcher;
     data.onAllDesktops = info.state & QtWayland::org_kde_plasma_window_management::state_on_all_desktops;
+    data.maximized = info.state & QtWayland::org_kde_plasma_window_management::state_maximized;
+    data.keepAbove = info.state & QtWayland::org_kde_plasma_window_management::state_keep_above;
+    data.keepBelow = info.state & QtWayland::org_kde_plasma_window_management::state_keep_below;
+    data.fullscreen = info.state & QtWayland::org_kde_plasma_window_management::state_fullscreen;
+    data.shaded = info.state & QtWayland::org_kde_plasma_window_management::state_shaded;
     return data;
 }
 
@@ -447,5 +461,16 @@ void WaylandWindowTasks::requestClose(quint64 windowId)
     PlasmaWindow *window = m_management->windows().value(windowId);
     if (window) {
         window->requestClose();
+    }
+}
+
+void WaylandWindowTasks::requestToggleState(quint64 windowId, uint32_t bit)
+{
+    if (!m_management) {
+        return;
+    }
+    PlasmaWindow *window = m_management->windows().value(windowId);
+    if (window) {
+        window->requestToggleState(bit);
     }
 }

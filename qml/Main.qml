@@ -10,6 +10,7 @@ Item {
     readonly property int edge: kooldock ? kooldock.screenEdge : Qt.BottomEdge
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     readonly property bool autoHide: kooldock ? kooldock.autoHide : false
+    readonly property bool debugBounds: kooldock ? kooldock.debugBounds : false
 
     readonly property int smallSize: settings ? settings.smallIconSize : 48
     readonly property int bigSize: settings ? settings.bigIconSize : 96
@@ -244,6 +245,31 @@ Item {
             globalCrossPos: hoverHandler.hovered
                             ? (vertical ? hoverHandler.point.position.x : hoverHandler.point.position.y)
                             : -100000
+        }
+    }
+
+    // Debug aid (-d/--debug-bounds CLI flag): the actual Wayland surface is
+    // normally invisible — only the "glass pill" (bg, above) is painted —
+    // which makes it hard to tell whether a grow/shrink is the window
+    // itself resizing or just the pill animating inside a window that
+    // hasn't changed size yet. Draws the live window edge directly, with
+    // no Behavior, so growth/shrink timing is exactly what's on screen.
+    Rectangle {
+        visible: root.debugBounds
+        anchors.fill: parent
+        color: "transparent"
+        border.color: "#ff00ff"
+        border.width: 2
+        z: 1000
+
+        Text {
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.margins: 4
+            color: "#ff00ff"
+            font.pixelSize: 10
+            font.bold: true
+            text: parent.width.toFixed(0) + "x" + parent.height.toFixed(0)
         }
     }
 }

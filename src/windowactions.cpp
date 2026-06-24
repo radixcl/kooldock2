@@ -37,6 +37,20 @@ void WindowActions::setCurrentWindow(quint64 id)
     Q_EMIT currentWindowChanged();
 }
 
+QVariantMap WindowActions::queryState(quint64 windowId) const
+{
+    if (!windowId || !m_tasks) return {};
+    const WindowTasks::TaskData data = m_tasks->taskData(windowId);
+    return {
+        {QStringLiteral("maximized"), data.maximized},
+        {QStringLiteral("keepAbove"), data.keepAbove},
+        {QStringLiteral("keepBelow"), data.keepBelow},
+        {QStringLiteral("fullscreen"), data.fullscreen},
+        {QStringLiteral("shaded"), data.shaded},
+        {QStringLiteral("onAllDesktops"), data.onAllDesktops},
+    };
+}
+
 void WindowActions::minimize()
 {
     if (!m_current) return;
@@ -51,7 +65,12 @@ void WindowActions::minimize()
 
 void WindowActions::maximize()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestToggleState(m_current, WindowTasks::StateMaximized);
+        return;
+    }
+    if (!KWindowSystem::isPlatformX11()) return;
     KWindowInfo info(static_cast<WId>(m_current), NET::WMState);
     if (info.state() & NET::Max) {
         KX11Extras::clearState(static_cast<WId>(m_current), NET::Max);
@@ -89,7 +108,12 @@ void WindowActions::close()
 
 void WindowActions::shade()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestToggleState(m_current, WindowTasks::StateShaded);
+        return;
+    }
+    if (!KWindowSystem::isPlatformX11()) return;
     KWindowInfo info(static_cast<WId>(m_current), NET::WMState);
     if (info.state() & NET::Shaded) {
         KX11Extras::clearState(static_cast<WId>(m_current), NET::Shaded);
@@ -100,7 +124,12 @@ void WindowActions::shade()
 
 void WindowActions::toggleKeepAbove()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestToggleState(m_current, WindowTasks::StateKeepAbove);
+        return;
+    }
+    if (!KWindowSystem::isPlatformX11()) return;
     KWindowInfo info(static_cast<WId>(m_current), NET::WMState);
     if (info.state() & NET::KeepAbove) {
         KX11Extras::clearState(static_cast<WId>(m_current), NET::KeepAbove);
@@ -111,7 +140,12 @@ void WindowActions::toggleKeepAbove()
 
 void WindowActions::toggleKeepBelow()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestToggleState(m_current, WindowTasks::StateKeepBelow);
+        return;
+    }
+    if (!KWindowSystem::isPlatformX11()) return;
     KWindowInfo info(static_cast<WId>(m_current), NET::WMState);
     if (info.state() & NET::KeepBelow) {
         KX11Extras::clearState(static_cast<WId>(m_current), NET::KeepBelow);
@@ -122,12 +156,33 @@ void WindowActions::toggleKeepBelow()
 
 void WindowActions::toggleFullscreen()
 {
-    if (!m_current || !KWindowSystem::isPlatformX11()) return;
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestToggleState(m_current, WindowTasks::StateFullscreen);
+        return;
+    }
+    if (!KWindowSystem::isPlatformX11()) return;
     KWindowInfo info(static_cast<WId>(m_current), NET::WMState);
     if (info.state() & NET::FullScreen) {
         KX11Extras::clearState(static_cast<WId>(m_current), NET::FullScreen);
     } else {
         KX11Extras::setState(static_cast<WId>(m_current), NET::FullScreen);
+    }
+}
+
+void WindowActions::toggleOnAllDesktops()
+{
+    if (!m_current) return;
+    if (m_tasks && !KWindowSystem::isPlatformX11()) {
+        m_tasks->requestToggleState(m_current, WindowTasks::StateOnAllDesktops);
+        return;
+    }
+    if (!KWindowSystem::isPlatformX11()) return;
+    KWindowInfo info(static_cast<WId>(m_current), NET::WMDesktop);
+    if (info.onAllDesktops()) {
+        KX11Extras::setOnDesktop(static_cast<WId>(m_current), KX11Extras::currentDesktop());
+    } else {
+        KX11Extras::setOnDesktop(static_cast<WId>(m_current), NET::OnAllDesktops);
     }
 }
 
