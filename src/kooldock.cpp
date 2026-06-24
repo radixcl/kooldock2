@@ -6,6 +6,7 @@
 
 #include "dockmodel.h"
 #include "kooldocksettings.h"
+#include "version.h"
 #include "windowactions.h"
 #include "windowtasks.h"
 
@@ -203,6 +204,7 @@ void KoolDock::setDragExpanded(bool expanded)
     // appears "stuck" at the invisible window border.
     applyLayerShell();
 }
+QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
 
 void KoolDock::setupView()

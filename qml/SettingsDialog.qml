@@ -34,6 +34,7 @@ Item {
             TabButton { text: i18n("Icons") }
             TabButton { text: i18n("Tasks") }
             TabButton { text: i18n("Tooltips") }
+            TabButton { text: i18n("About") }
         }
 
         StackLayout {
@@ -621,7 +622,68 @@ Item {
                     if (kooldock) kooldock.reload()
                     root.Window.window.close()
                 }
+                }
+            }
+
+            // =====================================================
+            //  ABOUT
+            // =====================================================
+            ScrollView {
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: parent.width
+                    spacing: 6
+
+                    Item { Layout.preferredHeight: 12 }
+                    Label {
+                        text: i18n("KoolDock2")
+                        font.pixelSize: 24; font.bold: true
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    Label {
+                        text: i18n("Version %1").arg(kooldock ? kooldock.version : "0.5.0")
+                        Layout.alignment: Qt.AlignHCenter
+                        opacity: 0.7
+                    }
+                    Label {
+                        text: i18n("A macOS-style dock for KDE Plasma 6")
+                        Layout.alignment: Qt.AlignHCenter
+                        opacity: 0.7
+                    }
+
+                    Item { Layout.preferredHeight: 16 }
+                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: sysPalette.mid; Layout.leftMargin: 40; Layout.rightMargin: 40 }
+
+                    Item { Layout.preferredHeight: 8 }
+                    Label {
+                        text: i18n("© 2026 Matias Fernandez")
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    Label {
+                        text: "<a href='mailto:matias.fernandez@gmail.com'>matias.fernandez@gmail.com</a>"
+                        Layout.alignment: Qt.AlignHCenter
+                        onLinkActivated: Qt.openUrlExternally("mailto:matias.fernandez@gmail.com")
+                        MouseArea {
+                            anchors.fill: parent
+                            acceptedButtons: Qt.NoButton
+                            cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        }
+                    }
+
+                    Item { Layout.preferredHeight: 12 }
+                    Label {
+                        text: i18n("Originally created by the KoolDock team for KDE 3")
+                        Layout.alignment: Qt.AlignHCenter
+                        opacity: 0.6
+                    }
+                    Label {
+                        text: i18n("Ported to Qt 6 / KDE Frameworks 6 / Wayland")
+                        Layout.alignment: Qt.AlignHCenter
+                        opacity: 0.6
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
             }
         }
-    }
 }

@@ -33,6 +33,7 @@ class KoolDock : public QObject
     Q_PROPERTY(QString themeName READ themeName NOTIFY themeNameChanged)
     Q_PROPERTY(bool trashIsEmpty READ isTrashEmpty NOTIFY trashIsEmptyChanged)
     Q_PROPERTY(bool debugBounds READ debugBounds CONSTANT)
+    Q_PROPERTY(QString version READ version CONSTANT)
 
 public:
     explicit KoolDock(QObject *parent = nullptr, bool debugBounds = false);
@@ -49,6 +50,7 @@ public:
     bool dragActive() const;
     bool isTrashEmpty() const;
     bool debugBounds() const;
+    QString version() const;
     QString themeName() const;
 
 public Q_SLOTS:
