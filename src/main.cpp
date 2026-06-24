@@ -67,10 +67,17 @@ int main(int argc, char *argv[])
     parser.process(app);
 
     if (parser.isSet(killOption)) {
-        // KDBusService is unique: just quit the registered instance via QDBus.
-        QDBusInterface dbus(QStringLiteral("org.kde.koolock2"),
-                            QStringLiteral("/kooldock2"),
-                            QStringLiteral("org.kde.koolock2"));
+        // KDBusService is unique: just quit the registered instance via
+        // QDBus. The bus name matches QGuiApplication::desktopFileName()
+        // (derived by KAboutData::setApplicationData() above from the
+        // homepage URL, e.g. "com.github.kooldock2" — not the literal
+        // "org.kde.koolock2" this used to hardcode, which never matched
+        // any real service). KDBusService exposes quit() for free on
+        // /MainApplication via the standard Qt QCoreApplication D-Bus
+        // interface, so no custom service/method is needed either.
+        QDBusInterface dbus(app.desktopFileName(),
+                            QStringLiteral("/MainApplication"),
+                            QStringLiteral("org.qtproject.Qt.QCoreApplication"));
         if (dbus.isValid()) {
             dbus.call(QStringLiteral("quit"));
         }
