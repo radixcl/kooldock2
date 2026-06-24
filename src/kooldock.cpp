@@ -490,14 +490,7 @@ void KoolDock::applyBlur()
             rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
         }
     QPainterPath path;
-    // Add a small margin around the pill so the blur is always pre-computed
-    // before the pill expands into the area during the zoom animation.
-    // Without this, KWin can take a frame to generate the blur for
-    // newly-covered pixels, producing a visible edge flicker on every
-    // zoom step.
-    static constexpr qreal blurMargin = 8.0;
-    rect.adjust(-blurMargin, -blurMargin, blurMargin, blurMargin);
-    path.addRoundedRect(rect, m_blurRadius + blurMargin, m_blurRadius + blurMargin);
+    path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
         KWindowEffects::enableBlurBehind(m_view, true, QRegion(path.toFillPolygon().toPolygon()));
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);

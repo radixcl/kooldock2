@@ -87,20 +87,6 @@ Item {
         : -1
     onPointerDistanceFromEdgeChanged: { if (kooldock) kooldock.setPointerDistanceFromEdge(pointerDistanceFromEdge) }
 
-    // bg's x/y bind off its own width/height (see below), so a single
-    // animated width/height change fires onWidthChanged and onXChanged
-    // (etc.) as two separate notifications a tick apart. Calling
-    // updateBlur() straight from each of those sent the compositor a
-    // blur region computed from a momentarily-inconsistent mix of old
-    // and new geometry (e.g. new width, stale x) several times a second
-    // during the zoom animation — KWin treats some of those transiently
-    // as an empty/degenerate region and drops the blur for a frame,
-    // visible as a flicker. interval: 0 defers the actual update to
-    // after all of bg's geometry properties have settled for this frame,
-    // so updateBlur() only ever runs once they're mutually consistent.
-    Timer { id: blurUpdateTimer; interval: 0; onTriggered: bg.updateBlur() }
-    function scheduleBlurUpdate() { blurUpdateTimer.restart() }
-
     // Suppress the auto-hide animation on the very first binding pass.
     // `kooldock` is set after setSource() (see kooldock.cpp), so on the first
     // evaluation autoHide is false and the pill reads as fully shown
@@ -188,11 +174,9 @@ Item {
             Behavior on y { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             // Update the blur region every frame as the pill slides, so the
             // blur stays aligned with the visible pill and never shows a
-            // static blurred rectangle before/after the animation. Goes
-            // through scheduleBlurUpdate() below rather than calling
-            // updateBlur() directly — see that property's comment.
-            onXChanged: root.scheduleBlurUpdate()
-            onYChanged: root.scheduleBlurUpdate()
+            // static blurred rectangle before/after the animation.
+            onXChanged: bg.updateBlur()
+            onYChanged: bg.updateBlur()
         }
 
         Behavior on width   { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
@@ -207,6 +191,15 @@ Item {
         // length, plus the short-axis slide offset, so the blur follows the
         // pill during the auto-hide animation (otherwise a static blurred
         // rectangle is visible before the pill arrives and after it leaves).
+        //
+        // bg.x / bg.y depend on bg.width / bg.height. When width changes
+        // (zoom animation), onWidthChanged fires first, then x re-evaluates
+        // and onXChanged fires — all in the same call stack. Calling
+        // updateBlur() from onXChanged/onYChanged ensures the blur sees
+        // settled values (the composition of width + x is consistent).
+        // Calling from onWidthChanged/onHeightChanged would send a
+        // momentarily-inconsistent region (new width, stale x), which KWin
+        // may treat as empty and drop the blur for a frame.
         function updateBlur() {
             if (!kooldock) return
             const longPos = vertical ? (bg.y + slideTransform.y) : (bg.x + slideTransform.x)
@@ -217,10 +210,8 @@ Item {
             const shortOffset = vertical ? slideTransform.x : slideTransform.y
             kooldock.updateBlurRegion(longPos, length, shortOffset, bg.radius)
         }
-        onXChanged: root.scheduleBlurUpdate()
-        onYChanged: root.scheduleBlurUpdate()
-        onWidthChanged: root.scheduleBlurUpdate()
-        onHeightChanged: root.scheduleBlurUpdate()
+        onXChanged: bg.updateBlur()
+        onYChanged: bg.updateBlur()
 
         DockBar {
             id: dockBar
