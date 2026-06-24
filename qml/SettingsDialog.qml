@@ -599,7 +599,7 @@ Item {
                         Layout.alignment: Qt.AlignHCenter
                     }
                     Label {
-                        text: i18n("Version %1").arg(kooldock ? kooldock.version : "0.5.0")
+                        text: i18n("Version") + " " + (kooldock ? kooldock.version : "0.5.0")
                         Layout.alignment: Qt.AlignHCenter
                         opacity: 0.7
                     }
