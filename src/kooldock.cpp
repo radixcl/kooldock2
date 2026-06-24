@@ -286,9 +286,7 @@ void KoolDock::applyLayerShell()
         }
     }
 
-    if (autoHide()) {
-        applyInputMask(!m_containsMouse);
-    }
+    applyInputMask(!m_containsMouse);
 }
 
 void KoolDock::applyGeometry()
