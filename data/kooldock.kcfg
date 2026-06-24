@@ -48,6 +48,10 @@
       <min>0</min>
       <max>100</max>
     </entry>
+    <entry name="screenName" type="String">
+      <label>Name of the screen (monitor) the dock should appear on.  Leave empty for the primary screen.</label>
+      <default></default>
+    </entry>
     <entry name="edgeMargin" type="Int">
       <label>Offset from the screen edge in pixels. Negative pushes the dock past other panels (e.g. the KDE taskbar) toward the edge; positive pushes it away. Use a negative value equal to the taskbar height to place the dock below it.</label>
       <default>0</default>

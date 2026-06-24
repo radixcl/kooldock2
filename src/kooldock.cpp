@@ -121,6 +121,9 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
 
     connect(KoolDockSettings::self(), &KCoreConfigSkeleton::configChanged,
             this, [this]() { reconfigure(); });
+    refreshScreens();
+    connect(qApp, &QGuiApplication::screenAdded,   this, [this](QScreen *) { refreshScreens(); });
+    connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen *) { refreshScreens(); });
     reconfigure();
 }
 
@@ -179,6 +182,36 @@ void KoolDock::setDragExpanded(bool expanded)
 }
 QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
+
+QStringList KoolDock::screenNames() const
+{
+    return m_screenNames;
+}
+
+QString KoolDock::screenName() const
+{
+    return KoolDockSettings::screenName();
+}
+
+void KoolDock::setScreenName(const QString &name)
+{
+    if (KoolDockSettings::screenName() == name) return;
+    KoolDockSettings::setScreenName(name);
+    KoolDockSettings::self()->save();
+    reconfigure();
+    Q_EMIT screenNameChanged();
+}
+
+void KoolDock::refreshScreens()
+{
+    QStringList names;
+    for (auto *s : QGuiApplication::screens())
+        names.append(s->name());
+    if (names != m_screenNames) {
+        m_screenNames = names;
+        Q_EMIT screenNamesChanged();
+    }
+}
 
 void KoolDock::setupView()
 {
@@ -246,6 +279,21 @@ void KoolDock::applyLayerShell()
     m_layer->setLayer(L::LayerTop);
     m_layer->setKeyboardInteractivity(L::KeyboardInteractivityOnDemand);
     m_layer->setScope(QStringLiteral("kooldock2"));
+
+    // Screen selection — place the layer surface on the configured
+    // monitor, falling back to the primary screen if none is set or
+    // the configured name doesn't match any connected screen.
+    {
+        const QString target = KoolDockSettings::screenName();
+        QScreen *chosen = QGuiApplication::primaryScreen();
+        for (auto *s : QGuiApplication::screens()) {
+            if (s->name() == target) {
+                chosen = s;
+                break;
+            }
+        }
+        m_layer->setScreen(chosen);
+    }
 
     // Edge margin: a negative value pushes the dock past other panels
     // (e.g. the KDE taskbar) toward the screen edge, so the dock can sit
@@ -359,20 +407,24 @@ int KoolDock::maxDockShortSize() const
 int KoolDock::maxDockWidth() const
 {
     // Window covers the full screen so it never resizes — no
-    // buffer-stretch flicker, no hover grow/shrink, no tooltip grow.
-    // The pill is positioned at the anchored edge by QML bindings;
-    // the rest is transparent.  Input is restricted to the pill area
-    // by applyInputMask() so clicks pass through to windows behind.
-    if (auto *s = QGuiApplication::primaryScreen())
-        return s->size().width();
-    return 1920;
+    // buffer-stretch flicker.  Match the selected screen, falling back
+    // to primary.
+    auto *s = QGuiApplication::primaryScreen();
+    const QString target = KoolDockSettings::screenName();
+    for (auto *c : QGuiApplication::screens()) {
+        if (c->name() == target) { s = c; break; }
+    }
+    return s ? s->size().width() : 1920;
 }
 
 int KoolDock::maxDockHeight() const
 {
-    if (auto *s = QGuiApplication::primaryScreen())
-        return s->size().height();
-    return 1080;
+    auto *s = QGuiApplication::primaryScreen();
+    const QString target = KoolDockSettings::screenName();
+    for (auto *c : QGuiApplication::screens()) {
+        if (c->name() == target) { s = c; break; }
+    }
+    return s ? s->size().height() : 1080;
 }
 
 static constexpr int TRIGGER_HEIGHT = 8;

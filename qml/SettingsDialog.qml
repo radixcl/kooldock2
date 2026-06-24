@@ -53,6 +53,23 @@ Item {
                     Label { text: i18n("Position"); font.bold: true; Layout.topMargin: 8; Layout.bottomMargin: 4 }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Monitor:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        ComboBox {
+                            model: kooldock ? kooldock.screenNames : []
+                            currentIndex: {
+                                if (!kooldock) return 0
+                                const idx = kooldock.screenNames.indexOf(kooldock.screenName)
+                                return idx >= 0 ? idx : 0
+                            }
+                            onActivated: {
+                                if (kooldock && currentIndex < kooldock.screenNames.length)
+                                    kooldock.screenName = kooldock.screenNames[currentIndex]
+                            }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Screen edge:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         ComboBox {
                             model: [i18n("Bottom"), i18n("Left"), i18n("Top"), i18n("Right")]

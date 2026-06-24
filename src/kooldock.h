@@ -34,6 +34,8 @@ class KoolDock : public QObject
     Q_PROPERTY(bool trashIsEmpty READ isTrashEmpty NOTIFY trashIsEmptyChanged)
     Q_PROPERTY(bool debugBounds READ debugBounds CONSTANT)
     Q_PROPERTY(QString version READ version CONSTANT)
+    Q_PROPERTY(QStringList screenNames READ screenNames NOTIFY screenNamesChanged)
+    Q_PROPERTY(QString screenName READ screenName WRITE setScreenName NOTIFY screenNameChanged)
 
 public:
     explicit KoolDock(QObject *parent = nullptr, bool debugBounds = false);
@@ -52,6 +54,9 @@ public:
     bool debugBounds() const;
     QString version() const;
     QString themeName() const;
+    QStringList screenNames() const;
+    QString screenName() const;
+    void setScreenName(const QString &name);
 
 public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
@@ -87,6 +92,8 @@ Q_SIGNALS:
     void dragActiveChanged();
     void trashIsEmptyChanged();
     void themeNameChanged();
+    void screenNamesChanged();
+    void screenNameChanged();
 
 private Q_SLOTS:
     void onScreenChanged(QScreen *screen);
@@ -100,6 +107,7 @@ private:
     void applyBlur();
     void applyInputMask(bool hidden);
     void reconfigure();
+    void refreshScreens();
     int maxDockWidth() const;
     int maxDockHeight() const;
     int maxDockLongSize() const;
@@ -130,6 +138,7 @@ private:
     QTimer m_dragHeartbeat;
     QTimer m_trashCheckTimer;
     bool m_trashIsEmpty = true;
+    QStringList m_screenNames;
 };
 
 #endif
