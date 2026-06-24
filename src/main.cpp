@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
         KAboutLicense::GPL_V2,
         i18n("(c) 2003, 2006 KoolDock team; (c) 2025 KoolDock2 port"),
         QString(),
-        QStringLiteral("https://github.com/anomalyco/kooldock2"),
+        QStringLiteral("https://gitlab.com/radixcl/kooldock2"),
         QStringLiteral("kooldock2-devel@lists.kde.cl"));
     aboutData.addAuthor(i18n("Matias Fernandez"), i18n("Original author"), QStringLiteral("radix@kde.cl"));
     aboutData.addAuthor(i18n("Francisco Guidi"), i18n("Original author"), QStringLiteral("francisco@guidi.com"));
