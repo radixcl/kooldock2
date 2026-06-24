@@ -177,13 +177,13 @@ Item {
         // identical either way (verified by a Node.js geometry sim).
         const barNearEdge = windowExtent / 2 - bar.contentLength / 2
         const localMousePos = globalMousePos - barNearEdge
-        // Non-autohide: zoom starts exactly when the cursor touches the pill
-        // edge. Autohide: keep a margin so zoom fires promptly when the dock
-        // slides in from the edge and the cursor may not be perfectly aligned.
-        const margin = autoHide ? (spacing * 2) : 0
-        // Long-axis check: cursor must be within the pill's span along the
-        // layout direction.
-        const inLongAxis = localMousePos > -margin && localMousePos < bar.contentLength + margin
+        // Long-axis check: when the dock is hidden (autohide), the trigger
+        // strip spans the full window width — accept hover at any long-axis
+        // position so the cursor doesn't need to land exactly on the pill.
+        // Once shown, the normal margin applies.
+        const longAxisMargin = autoHide && !bar.containsMouse ? 99999
+                              : autoHide ? (spacing * 2) : 0
+        const inLongAxis = localMousePos > -longAxisMargin && localMousePos < bar.contentLength + longAxisMargin
         // Short-axis check: cursor must be within the icon zone (from the
         // screen edge to bigSize + spacing, the tallest zoomed icon). Without
         // this, moving the cursor vertically off the dock while staying within
