@@ -24,6 +24,11 @@ Item {
 
     property bool containsMouse: false
     property real contentLength: 0
+    // Relayed up from whichever DockItem currently has a tooltip showing
+    // (see DockItem.qml's tooltipExtent) — Main.qml forwards this to
+    // KoolDock so the real window can grow to fit it. Only one tooltip is
+    // ever visible at a time, so "last write wins" is correct here.
+    property real tooltipExtent: 0
     // Largest rendered icon size from the *last* layout() pass — used to
     // size the cross-axis "still hovering" margin below. Read before this
     // frame's pass overwrites it, same reasoning as contentLength above:
@@ -443,6 +448,8 @@ Item {
                 if (bar.kooldock) bar.kooldock.trashFiles(urls)
             }
 
+            onTooltipExtentChanged: bar.tooltipExtent = delegateItem.tooltipExtent
+
             // Drag-and-drop: notify the bar when a drag starts, moves, or
             // ends. The bar handles reordering (drag within the dock) and
             // removal (drag outside the dock) with the poof animation.
@@ -509,16 +516,28 @@ Item {
     // Context-sensitive menu for dock items (launchers and tasks).
     // Items are shown/hidden based on the context menu item's type
     // (launcher vs task, running vs not, fused vs standalone).
+    //
+    // popupType: Popup.Window forces this to render as its own top-level
+    // window. Without it, Qt defaults to rendering the popup as a plain
+    // Item clipped to *this* window's own surface — which for kooldock2
+    // is just tall enough for the icon row + zoom overflow (tens of px),
+    // nowhere near enough for a menu with this many rows, so it rendered
+    // squashed into a tiny scrollable box instead of its natural size.
     Menu {
         id: contextMenu
+        popupType: Popup.Window
         onClosed: bar.hideMenu()
 
-        // "New Window" — only for launchers (fused or not) to launch a
-        // new instance alongside any running one.
+        // "New Window" — generic fallback to launch a new instance
+        // alongside any running one. Only shown when the app doesn't
+        // already define its own Desktop Actions (below): apps that do
+        // (Konsole, LibreWolf, ...) include their own "Open a New
+        // Window"-equivalent action, and showing both duplicated the
+        // same entry twice.
         MenuItem {
             text: i18n("&New Window")
             icon.name: "window-new"
-            visible: contextMenuItem && contextMenuItem.isLauncher
+            visible: contextMenuItem && contextMenuItem.isLauncher && bar.contextMenuActions.length === 0
             onTriggered: {
                 if (bar.kooldock && bar.kooldock.model && contextMenuIndex >= 0)
                     bar.kooldock.model.newWindow(contextMenuIndex)
@@ -587,65 +606,75 @@ Item {
         // "More Actions" — window states the Wayland protocol exposes via
         // set_state (plasma-window-management.xml), wired up through
         // WindowActions just like Minimize/Maximize/Close above.
-        Menu {
-            id: moreActionsMenu
-            title: i18n("&More Actions")
+        //
+        // Deliberately flat (no nested submenu Menu): binding `visible`
+        // on a Menu used as another Menu's child crashes inside
+        // QQuickMenu::setVisible() the moment contextMenuItem changes and
+        // that binding re-evaluates while the parent menu hasn't been
+        // popped yet (reproduced twice — confirmed via coredumpctl, both
+        // times segfaulting in QQuickMenu::setVisible()). Plain MenuItems
+        // with the same visible binding (proven safe by Minimize/Maximize/
+        // Close already using it) don't have this problem.
+        MenuSeparator {
             visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
-
-            MenuItem {
-                text: i18n("Keep &Above Others")
-                checkable: true
-                checked: !!bar.contextMenuState.keepAbove
-                onTriggered: {
-                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
-                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
-                        bar.kooldock.windowActions.toggleKeepAbove()
-                    }
+        }
+        MenuItem {
+            text: i18n("Keep &Above Others")
+            checkable: true
+            checked: !!bar.contextMenuState.keepAbove
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.toggleKeepAbove()
                 }
             }
-            MenuItem {
-                text: i18n("Keep &Below Others")
-                checkable: true
-                checked: !!bar.contextMenuState.keepBelow
-                onTriggered: {
-                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
-                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
-                        bar.kooldock.windowActions.toggleKeepBelow()
-                    }
+        }
+        MenuItem {
+            text: i18n("Keep &Below Others")
+            checkable: true
+            checked: !!bar.contextMenuState.keepBelow
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.toggleKeepBelow()
                 }
             }
-            MenuItem {
-                text: i18n("&Fullscreen")
-                checkable: true
-                checked: !!bar.contextMenuState.fullscreen
-                onTriggered: {
-                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
-                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
-                        bar.kooldock.windowActions.toggleFullscreen()
-                    }
+        }
+        MenuItem {
+            text: i18n("&Fullscreen")
+            checkable: true
+            checked: !!bar.contextMenuState.fullscreen
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.toggleFullscreen()
                 }
             }
-            MenuItem {
-                text: i18n("Sh&ade")
-                checkable: true
-                checked: !!bar.contextMenuState.shaded
-                onTriggered: {
-                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
-                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
-                        bar.kooldock.windowActions.shade()
-                    }
+        }
+        MenuItem {
+            text: i18n("Sh&ade")
+            checkable: true
+            checked: !!bar.contextMenuState.shaded
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.shade()
                 }
             }
-            MenuSeparator {}
-            MenuItem {
-                text: i18n("&On All Desktops")
-                checkable: true
-                checked: !!bar.contextMenuState.onAllDesktops
-                onTriggered: {
-                    if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
-                        bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
-                        bar.kooldock.windowActions.toggleOnAllDesktops()
-                    }
+        }
+        MenuItem {
+            text: i18n("&On All Desktops")
+            checkable: true
+            checked: !!bar.contextMenuState.onAllDesktops
+            visible: contextMenuItem && (contextMenuItem.isTask || (contextMenuItem.isLauncher && contextMenuItem.isRunning))
+            onTriggered: {
+                if (bar.kooldock && contextMenuItem && contextMenuItem.windowId) {
+                    bar.kooldock.windowActions.currentWindow = contextMenuItem.windowId
+                    bar.kooldock.windowActions.toggleOnAllDesktops()
                 }
             }
         }
@@ -693,6 +722,7 @@ Item {
     // Trash right-click menu: open folder + empty trash.
     Menu {
         id: trashMenu
+        popupType: Popup.Window
         MenuItem {
             text: i18n("&Open Trash")
             icon.name: "user-trash"
@@ -719,6 +749,7 @@ Item {
 
     Menu {
         id: dockMenu
+        popupType: Popup.Window
         MenuItem { text: i18n("Edit &Preferences"); icon.name: "configure"
             onTriggered: { if (bar.kooldock) bar.kooldock.showPreferences() } }
         MenuItem { text: i18n("&Reload Configuration"); icon.name: "view-refresh"

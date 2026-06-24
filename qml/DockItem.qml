@@ -260,6 +260,14 @@ Item {
         }
     }
 
+    // How far beyond the icon's own footprint the tooltip below currently
+    // needs, along the dock's short axis (its width on vertical edges,
+    // height on horizontal ones since that's the axis it grows along
+    // there) — 0 when not showing. DockBar relays this up to KoolDock so
+    // the real window can grow to fit it instead of clipping the text.
+    readonly property real tooltipExtent: tooltipBox.opacity > 0.01
+        ? (vertical ? tooltipBox.width + 8 : tooltipBox.height + 8) : 0
+
     // Custom in-scene tooltip (macOS-style). Rendered as a child of this
     // item, NOT a QtQuick.Controls ToolTip popup — so it's part of the same
     // Wayland surface and the root HoverHandler never loses hover (the dock

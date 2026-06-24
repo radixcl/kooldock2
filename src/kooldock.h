@@ -55,6 +55,12 @@ public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
     Q_INVOKABLE void setDragActive(bool active);
     Q_INVOKABLE void setDragExpanded(bool expanded);
+    // How far beyond the icon footprint the currently-visible in-scene
+    // tooltip needs, along the dock's short axis — 0 when none is
+    // showing. Grows the real window immediately (no animation to race
+    // against); shrinking is delayed to outlast the tooltip's 150ms
+    // fade-out, same reasoning as the hover-driven m_shrinkTimer.
+    Q_INVOKABLE void setTooltipExtent(int px);
     Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
     Q_INVOKABLE void showAppMenu();
     Q_INVOKABLE void openTrash();
@@ -101,12 +107,15 @@ private:
     bool m_dragActive = false;
     bool m_dragExpanded = false;
     bool m_debugBounds = false;
+    int m_tooltipExtent = 0;
+    int m_pendingTooltipExtent = 0;
     qreal m_blurPos = 0;
     qreal m_blurLength = 0;
     qreal m_blurShortOffset = 0;
     qreal m_blurRadius = 0;
     QTimer m_hideTimer;
     QTimer m_shrinkTimer;
+    QTimer m_tooltipShrinkTimer;
     QTimer m_dragHeartbeat;
     QTimer m_trashCheckTimer;
     bool m_trashIsEmpty = true;

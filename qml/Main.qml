@@ -64,6 +64,15 @@ Item {
     readonly property bool containsMouse: dockBar.containsMouse || dockBar.frozen
                                             || (kooldock ? kooldock.dragActive : false)
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
+    // Grow the real window to fit whichever tooltip is currently showing
+    // (see DockItem.qml's tooltipExtent) instead of clipping long names —
+    // KoolDock handles the grow-now/shrink-after-fade-out timing.
+    Connections {
+        target: dockBar
+        function onTooltipExtentChanged() {
+            if (kooldock) kooldock.setTooltipExtent(dockBar.tooltipExtent)
+        }
+    }
 
     // Suppress the auto-hide animation on the very first binding pass.
     // `kooldock` is set after setSource() (see kooldock.cpp), so on the first
