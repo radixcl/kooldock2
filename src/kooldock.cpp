@@ -243,15 +243,12 @@ void KoolDock::setupView()
     }
 }
 
-// Resize strategy: setDesiredSize() is the only way we ask the compositor
-// for a new layer surface size. The earlier paired m_view->resize() call
-// forced the QWindow to its new geometry before QtWayland had produced a
-// buffer of that size, so for one frame the compositor stretched the
-// previous buffer to the new surface size — a visible flicker on every
-// hover/tooltip/drag resize. Letting setDesiredSize() drive the resize
-// means QtWayland only commits the new surface geometry together with a
-// matching buffer, after acking the compositor's configure event, so no
-// frame with a size-mismatched buffer is ever presented.
+// Resize strategy: setMinimumSize/setMaximumSize communicate the desired
+// size to the layer-shell compositor without forcing an immediate QWindow
+// resize (unlike m_view->resize(), which produced a one-frame buffer
+// stretch).  setDesiredSize() is a newer LayerShellQt API (>= 6.6.4)
+// that does the same thing but isn't available on older distros;
+// setMinimumSize/setMaximumSize work everywhere.
 void KoolDock::applyLayerShell()
 {
     if (!m_view) {
@@ -333,7 +330,8 @@ void KoolDock::applyLayerShell()
             size.setHeight(bgHeight);
         }
     }
-    m_layer->setDesiredSize(size);
+    m_view->setMinimumSize(size);
+    m_view->setMaximumSize(size);
     m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
     m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
     if (!overlay) {
@@ -454,7 +452,7 @@ void KoolDock::applyInputMask(bool hidden)
     // Use maxDockWidth()/maxDockHeight() (the *desired* size for the
     // current orientation) rather than m_view->width()/height() (the
     // *current* QWindow size). When switching edges (e.g. Bottom → Left),
-    // setDesiredSize has been called but the compositor hasn't yet
+    // sized the surface (setMinimumSize/setMaximumSize) but the compositor hasn't yet
     // configured the new surface size; the trigger strip must match the
     // eventual window size, not the stale one, or the strip will only
     // cover a fraction of the edge — the uncovered area never receives
