@@ -43,6 +43,9 @@ target_include_directories(kooldock2 PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
+# Generate version header from CMake project() call in top-level CMakeLists.txt
+configure_file(version.h.in version.h @ONLY)
+
 target_link_libraries(kooldock2 PRIVATE
     Qt6::Core
     Qt6::DBus

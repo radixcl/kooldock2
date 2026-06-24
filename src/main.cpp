@@ -16,8 +16,7 @@
 
 #include "kooldock.h"
 #include "kooldocksettings.h"
-
-static constexpr char KOOLDOCK_VERSION[] = "0.5.0";
+#include "version.h"
 
 int main(int argc, char *argv[])
 {
