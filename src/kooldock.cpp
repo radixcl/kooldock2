@@ -243,12 +243,13 @@ void KoolDock::setupView()
     }
 }
 
-// Resize strategy: setMinimumSize/setMaximumSize communicate the desired
-// size to the layer-shell compositor without forcing an immediate QWindow
-// resize (unlike m_view->resize(), which produced a one-frame buffer
-// stretch).  setDesiredSize() is a newer LayerShellQt API (>= 6.6.4)
-// that does the same thing but isn't available on older distros;
-// setMinimumSize/setMaximumSize work everywhere.
+// Resize strategy: setDesiredSize() tells the compositor the desired
+// surface size without forcing an immediate QWindow resize — QtWayland
+// only commits the new geometry together with a matching buffer after
+// acking the configure event, so no frame with a size-mismatched buffer
+// is ever presented (no visible stretch).  On older LayerShellQt
+// (< 6.6.4, e.g. Ubuntu 25.04) fall back to setMinimumSize/setMaximumSize;
+// the one-frame stretch may appear on those distros.
 void KoolDock::applyLayerShell()
 {
     if (!m_view) {
@@ -330,8 +331,12 @@ void KoolDock::applyLayerShell()
             size.setHeight(bgHeight);
         }
     }
+#ifdef LAYERSHELLQT_HAS_SET_DESIRED_SIZE
+    m_layer->setDesiredSize(size);
+#else
     m_view->setMinimumSize(size);
     m_view->setMaximumSize(size);
+#endif
     m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
     m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
     if (!overlay) {
@@ -452,7 +457,7 @@ void KoolDock::applyInputMask(bool hidden)
     // Use maxDockWidth()/maxDockHeight() (the *desired* size for the
     // current orientation) rather than m_view->width()/height() (the
     // *current* QWindow size). When switching edges (e.g. Bottom → Left),
-    // sized the surface (setMinimumSize/setMaximumSize) but the compositor hasn't yet
+    // setDesiredSize has been called but the compositor hasn't yet
     // configured the new surface size; the trigger strip must match the
     // eventual window size, not the stale one, or the strip will only
     // cover a fraction of the edge — the uncovered area never receives
