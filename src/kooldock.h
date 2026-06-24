@@ -36,6 +36,7 @@ class KoolDock : public QObject
     Q_PROPERTY(QString version READ version CONSTANT)
     Q_PROPERTY(QStringList screenNames READ screenNames NOTIFY screenNamesChanged)
     Q_PROPERTY(QString screenName READ screenName WRITE setScreenName NOTIFY screenNameChanged)
+    Q_PROPERTY(bool autostart READ autostart WRITE setAutostart NOTIFY autostartChanged)
 
 public:
     explicit KoolDock(QObject *parent = nullptr, bool debugBounds = false);
@@ -57,6 +58,8 @@ public:
     QStringList screenNames() const;
     QString screenName() const;
     void setScreenName(const QString &name);
+    bool autostart() const;
+    void setAutostart(bool enable);
 
 public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
@@ -96,6 +99,7 @@ Q_SIGNALS:
     void themeNameChanged();
     void screenNamesChanged();
     void screenNameChanged();
+    void autostartChanged();
 
 private Q_SLOTS:
     void onScreenChanged(QScreen *screen);

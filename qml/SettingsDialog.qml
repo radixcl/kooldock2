@@ -122,6 +122,12 @@ Item {
                         checked: settings ? settings.showKMenu : false
                         onToggled: { if (settings) settings.showKMenu = checked }
                     }
+                    CheckBox {
+                        text: i18n("Start automatically on login")
+                        Layout.leftMargin: 10
+                        checked: kooldock ? kooldock.autostart : false
+                        onToggled: { if (kooldock) kooldock.autostart = checked }
+                    }
                 }
             }
 

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Dock bar -->
+  <rect x="8" y="42" width="48" height="14" rx="7" ry="7"
+        fill="#2a2e32" stroke="#1b1e20" stroke-width="1"/>
+
+  <!-- Dock icons, sized to suggest parabolic zoom toward the center -->
+  <rect x="10.5" y="37" width="7"  height="7"  rx="2"   fill="#3daee9"/>
+  <rect x="18"   y="34" width="10" height="10" rx="2.7" fill="#2ecc71"/>
+  <rect x="24.5" y="29" width="15" height="15" rx="4"   fill="#f67400"/>
+  <rect x="36"   y="34" width="10" height="10" rx="2.7" fill="#9b59b6"/>
+  <rect x="46.5" y="37" width="7"  height="7"  rx="2"   fill="#f9b32f"/>
+</svg>

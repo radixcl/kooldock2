@@ -21,6 +21,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QIcon>
 #include <QPainterPath>
 #include <QProcess>
@@ -298,6 +299,58 @@ void KoolDock::setScreenName(const QString &name)
     KoolDockSettings::self()->save();
     reconfigure();
     Q_EMIT screenNameChanged();
+}
+
+// Source of truth is the presence of the file itself (the freedesktop.org
+// autostart convention), not a kcfg entry — that way the checkbox always
+// reflects what will actually happen on next login, even if the file was
+// added/removed by something other than this dialog.
+static QString autostartDesktopFilePath()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QStringLiteral("/autostart/org.kde.kooldock2.desktop");
+}
+
+bool KoolDock::autostart() const
+{
+    return QFile::exists(autostartDesktopFilePath());
+}
+
+void KoolDock::setAutostart(bool enable)
+{
+    const QString path = autostartDesktopFilePath();
+    if (enable == QFile::exists(path)) return;
+
+    if (!enable) {
+        QFile::remove(path);
+        Q_EMIT autostartChanged();
+        return;
+    }
+
+    QDir().mkpath(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+                  + QStringLiteral("/autostart"));
+
+    // Prefer copying the installed .desktop file (kept in sync with the
+    // installed Exec= path); fall back to a minimal one for unpackaged
+    // dev builds run straight out of build/bin.
+    const QString installed = QStandardPaths::locate(QStandardPaths::ApplicationsLocation,
+                                                       QStringLiteral("org.kde.kooldock2.desktop"));
+    if (!installed.isEmpty()) {
+        QFile::copy(installed, path);
+    } else {
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            file.write(QStringLiteral(
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=KoolDock2\n"
+                "Exec=%1\n"
+                "Icon=kooldock2\n"
+                "X-KDE-Wayland-Interfaces=org_kde_plasma_window_management\n")
+                .arg(QCoreApplication::applicationFilePath()).toUtf8());
+        }
+    }
+    Q_EMIT autostartChanged();
 }
 
 void KoolDock::refreshScreens()
