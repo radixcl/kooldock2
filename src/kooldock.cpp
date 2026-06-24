@@ -20,6 +20,7 @@
 
 #include <QDesktopServices>
 #include <QDir>
+#include <QDirIterator>
 #include <QIcon>
 #include <QPainterPath>
 #include <QProcess>
@@ -31,6 +32,47 @@
 #include <QTimer>
 #include <QUrl>
 
+static QString resolveFlatpakIcon(const QString &appId)
+{
+    static QHash<QString, QString> cache;
+
+    auto it = cache.constFind(appId);
+    if (it != cache.constEnd()) {
+        return it->isEmpty() ? QString() : *it;
+    }
+
+    QString name = appId;
+    if (name.endsWith(QLatin1String("-flatpak"), Qt::CaseInsensitive)) {
+        name = name.left(name.length() - 8);
+    }
+    if (name.isEmpty()) {
+        cache.insert(appId, QString());
+        return {};
+    }
+
+    const QStringList iconDirs = {
+        QDir::homePath() + QStringLiteral("/.local/share/flatpak/exports/share/icons/hicolor"),
+        QStringLiteral("/var/lib/flatpak/exports/share/icons/hicolor"),
+    };
+
+    for (const QString &iconDir : iconDirs) {
+        QDirIterator it(iconDir, QStringList() << QStringLiteral("*.png") << QStringLiteral("*.svg") << QStringLiteral("*.svgz"),
+                        QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            const QString iconName = it.fileInfo().completeBaseName();
+            if (iconName.compare(name, Qt::CaseInsensitive) == 0
+                || iconName.contains(name, Qt::CaseInsensitive)) {
+                cache.insert(appId, iconName);
+                return iconName;
+            }
+        }
+    }
+
+    cache.insert(appId, QString());
+    return {};
+}
+
 class IconImageProvider : public QQuickImageProvider
 {
 public:
@@ -38,6 +80,35 @@ public:
     QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) override
     {
         QIcon icon = QIcon::fromTheme(id);
+        if (icon.isNull()) {
+            const QString lower = id.toLower();
+            if (lower != id) {
+                icon = QIcon::fromTheme(lower);
+            }
+            if (icon.isNull()) {
+                const int flatpakDash = id.indexOf(QLatin1String("-flatpak"), 0, Qt::CaseInsensitive);
+                if (flatpakDash > 0) {
+                    const QString stripped = id.left(flatpakDash);
+                    icon = QIcon::fromTheme(stripped);
+                    if (icon.isNull()) {
+                        icon = QIcon::fromTheme(stripped.toLower());
+                    }
+                }
+            }
+            if (icon.isNull() && id.contains(QLatin1Char('.'))) {
+                const QString last = id.section(QLatin1Char('.'), -1);
+                if (!last.isEmpty()) {
+                    icon = QIcon::fromTheme(last);
+                    if (icon.isNull()) icon = QIcon::fromTheme(last.toLower());
+                }
+            }
+            if (icon.isNull()) {
+                const QString resolved = resolveFlatpakIcon(id);
+                if (!resolved.isEmpty()) {
+                    icon = QIcon::fromTheme(resolved);
+                }
+            }
+        }
         if (icon.isNull()) icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
         const QSize s = requestedSize.isValid() ? requestedSize : QSize(48, 48);
         QPixmap pix = icon.pixmap(s);
