@@ -120,9 +120,11 @@ private:
     qreal m_blurLength = 0;
     qreal m_blurShortOffset = 0;
     qreal m_blurRadius = 0;
+    bool m_blurDirty = false;
     QTimer m_hideTimer;
     QTimer m_shrinkTimer;
     QTimer m_tooltipShrinkTimer;
+    QTimer m_blurTimer;
     QTimer m_dragHeartbeat;
     QTimer m_trashCheckTimer;
     bool m_trashIsEmpty = true;

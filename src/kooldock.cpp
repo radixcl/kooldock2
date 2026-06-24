@@ -81,6 +81,17 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
     m_shrinkTimer.setSingleShot(true);
     connect(&m_shrinkTimer, &QTimer::timeout, this, &KoolDock::applyLayerShell);
 
+    // Throttle blur region updates: QML pushes new geometry every frame
+    // (60 fps) during the zoom animation, but every enableBlurBehind
+    // call tells KWin to regenerate the blurred background — KWin
+    // can't keep up at 60 fps and drops the blur for a frame.  A
+    // single-shot timer restarted by updateBlurRegion (and re-armed
+    // by applyBlur if more updates arrived while waiting) applies the
+    // latest values at most every 32 ms (~30 fps).
+    m_blurTimer.setSingleShot(true);
+    m_blurTimer.setInterval(32);
+    connect(&m_blurTimer, &QTimer::timeout, this, &KoolDock::applyBlur);
+
     m_tooltipShrinkTimer.setSingleShot(true);
     connect(&m_tooltipShrinkTimer, &QTimer::timeout, this, [this]() {
         // On vertical edges, shrinking the tooltip extent pulls the
@@ -461,6 +472,7 @@ void KoolDock::applyInputMask(bool hidden)
 void KoolDock::applyBlur()
 {
     if (!m_view) return;
+    m_blurDirty = false;
     if (KoolDockSettings::blurBackground()) {
         const qreal pos = m_blurPos;
         const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
@@ -490,6 +502,10 @@ void KoolDock::applyBlur()
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);
     }
+    // If QML pushed more updates while we were waiting for this timer
+    // tick, re-arm so we catch up in the next interval.
+    if (m_blurDirty)
+        m_blurTimer.start();
 }
 
 void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius)
@@ -498,7 +514,9 @@ void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffs
     m_blurLength = longLength;
     m_blurShortOffset = shortOffset;
     m_blurRadius = radius;
-    applyBlur();
+    m_blurDirty = true;
+    if (!m_blurTimer.isActive())
+        m_blurTimer.start();
 }
 
 void KoolDock::reconfigure()
