@@ -362,18 +362,18 @@ int KoolDock::maxDockShortSize() const
 
 int KoolDock::maxDockWidth() const
 {
-    // Window covers the full screen so it never needs to resize — no
-    // buffer-stretch flicker, no hover grow/shrink, no tooltip grow.
-    // The pill is positioned at the anchored edge by QML bindings.
-    if (m_view && m_view->screen())
-        return m_view->screen()->size().width();
+    // Window covers the full screen; never resizes — no buffer-stretch flicker.
+    // Use the primary screen, not m_view->screen(), which may be null during
+    // setupView() before the window is shown.
+    if (auto *s = QGuiApplication::primaryScreen())
+        return s->size().width();
     return 1920;
 }
 
 int KoolDock::maxDockHeight() const
 {
-    if (m_view && m_view->screen())
-        return m_view->screen()->size().height();
+    if (auto *s = QGuiApplication::primaryScreen())
+        return s->size().height();
     return 1080;
 }
 
