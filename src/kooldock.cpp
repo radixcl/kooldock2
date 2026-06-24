@@ -383,36 +383,40 @@ void KoolDock::applyInputMask(bool hidden)
 {
     if (!m_view) return;
     if (!hidden) {
-        // Full input: clear any mask so the entire surface receives
-        // pointer and touch events.
         m_view->setMask(QRegion());
         return;
     }
-    // Restrict input to the trigger strip at the anchored edge.  On
-    // Wayland QWindow::setMask translates to wl_surface::set_input_region,
-    // which only affects pointer/touch hit-testing — the surface geometry
-    // (used for wl_data_device::enter during drag-and-drop) stays at the
-    // full window size, so drags from external apps can still wake the
-    // dock.
-    //
-    // Use maxDockWidth()/maxDockHeight() (the *desired* size for the
-    // current orientation) rather than m_view->width()/height() (the
-    // *current* QWindow size). When switching edges (e.g. Bottom → Left),
-    // setDesiredSize has been called but the compositor hasn't yet
-    // configured the new surface size; the trigger strip must match the
-    // eventual window size, not the stale one, or the strip will only
-    // cover a fraction of the edge — the uncovered area never receives
-    // pointer-enter and the dock can't wake up, requiring a restart.
     const int w = maxDockWidth();
     const int h = maxDockHeight();
-    QRect strip;
-    switch (screenEdge()) {
-    case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
-    case Qt::TopEdge:    strip = QRect(0, 0, w, TRIGGER_HEIGHT); break;
-    case Qt::LeftEdge:   strip = QRect(0, 0, TRIGGER_HEIGHT, h); break;
-    case Qt::RightEdge:  strip = QRect(w - TRIGGER_HEIGHT, 0, TRIGGER_HEIGHT, h); break;
+    const int bgHeight = KoolDockSettings::dockHeight();
+    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+
+    if (autoHide()) {
+        // Autohide: restrict to an 8 px trigger strip at the anchored edge.
+        QRect strip;
+        switch (screenEdge()) {
+        case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
+        case Qt::TopEdge:    strip = QRect(0, 0, w, TRIGGER_HEIGHT); break;
+        case Qt::LeftEdge:   strip = QRect(0, 0, TRIGGER_HEIGHT, h); break;
+        case Qt::RightEdge:  strip = QRect(w - TRIGGER_HEIGHT, 0, TRIGGER_HEIGHT, h); break;
+        }
+        m_view->setMask(QRegion(strip));
+    } else {
+        // Non-autohide: restrict to the pill area so clicks on windows
+        // behind the full-screen transparent overflow pass through.
+        const int pillLen = maxDockLongSize();
+        QRect rect;
+        if (vert) {
+            const qreal baseX = (screenEdge() == Qt::RightEdge) ? (w - bgHeight) : 0;
+            const qreal centerY = (h - pillLen) / 2;
+            rect = QRect(baseX, centerY, bgHeight, pillLen);
+        } else {
+            const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (h - bgHeight);
+            const qreal centerX = (w - pillLen) / 2;
+            rect = QRect(centerX, baseY, pillLen, bgHeight);
+        }
+        m_view->setMask(QRegion(rect));
     }
-    m_view->setMask(QRegion(strip));
 }
 
 void KoolDock::applyBlur()
@@ -548,10 +552,12 @@ void KoolDock::setContainsMouse(bool contains)
             m_hideTimer.start(200);
         }
     }
-    // Non-autohide: the window is always full-screen size — no resize
-    // on hover enter/leave.  The transparent overflow area may intercept
-    // clicks on windows above the dock; use setExclusiveZone for proper
-    // work-area reservation instead of shrinking the window.
+    // Non-autohide: the window is always full-screen.  When the cursor is
+    // outside the pill, restrict input to just the pill area so clicks on
+    // windows behind the dock pass through the transparent overflow.
+    if (m_layer && !KoolDockSettings::autoHide()) {
+        applyInputMask(!contains);
+    }
     Q_EMIT containsMouseChanged();
 }
 
