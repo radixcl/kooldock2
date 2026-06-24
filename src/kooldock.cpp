@@ -175,13 +175,8 @@ void KoolDock::setDragExpanded(bool expanded)
 {
     if (m_dragExpanded == expanded) return;
     m_dragExpanded = expanded;
-    // Re-apply the layer shell with the new (expanded or normal) size.
-    // The expansion grows the window along its short axis (perpendicular
-    // to the screen edge) so the cursor stays inside the Wayland surface
-    // while an icon is dragged outside the dock's visible area — without
-    // it, the DragHandler stops tracking at the surface edge and the icon
-    // appears "stuck" at the invisible window border.
-    applyLayerShell();
+    // Window is always full-screen; drag tracking works anywhere without
+    // expanding.  Keep the flag for DockItem's visual feedback.
 }
 QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
@@ -269,38 +264,11 @@ void KoolDock::applyLayerShell()
 
     const int bgHeight = KoolDockSettings::dockHeight();
     const bool overlay = autoHide() || edgeMargin != 0;
+    // Window is always the full screen size.  No resizes ever — the pill
+    // is positioned at the anchored edge by QML bindings; the rest of the
+    // window is transparent.  This eliminates every source of compositor
+    // buffer-stretch flicker (hover, tooltip, drag expand, model changes).
     QSize size(maxDockWidth(), maxDockHeight());
-    // During an internal icon drag, expand the window along its short
-    // axis so the DragHandler keeps tracking the cursor as the icon moves
-    // outside the dock's visible area.
-    if (m_dragExpanded) {
-        constexpr int dragExpandShort = 300;
-        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-        if (vert) {
-            size.rwidth() += dragExpandShort;
-        } else {
-            size.rheight() += dragExpandShort;
-        }
-    }
-    // Tooltip space is pre-reserved in maxDockShortSize() for all edges
-    // — no dynamic grow is needed here.  Eliminating the per-tooltip
-    // resize removes the one-frame buffer-stretch flicker the compositor
-    // produces every time the surface size changes.
-    //
-    // Non-autohide and no zoom active: shrink the window's short axis to
-    // just bgHeight so the transparent overflow area doesn't intercept
-    // clicks on windows above/behind the dock. When the cursor enters the
-    // pill zone, setContainsMouse() re-expands to the full max size. This
-    // only applies when no drag is active (drag operations always need the
-    // full surface).
-    if (!autoHide() && !m_dragExpanded && !m_containsMouse && !m_dragActive) {
-        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-        if (vert) {
-            size.setWidth(bgHeight);
-        } else {
-            size.setHeight(bgHeight);
-        }
-    }
 #ifdef LAYERSHELLQT_HAS_SET_DESIRED_SIZE
     m_layer->setDesiredSize(size);
 #else
@@ -394,16 +362,19 @@ int KoolDock::maxDockShortSize() const
 
 int KoolDock::maxDockWidth() const
 {
-    // Window width = long axis on horizontal edges, short axis on vertical.
-    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-    return vert ? maxDockShortSize() : maxDockLongSize();
+    // Window covers the full screen so it never needs to resize — no
+    // buffer-stretch flicker, no hover grow/shrink, no tooltip grow.
+    // The pill is positioned at the anchored edge by QML bindings.
+    if (m_view && m_view->screen())
+        return m_view->screen()->size().width();
+    return 1920;
 }
 
 int KoolDock::maxDockHeight() const
 {
-    // Window height = short axis on horizontal edges, long axis on vertical.
-    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-    return vert ? maxDockLongSize() : maxDockShortSize();
+    if (m_view && m_view->screen())
+        return m_view->screen()->size().height();
+    return 1080;
 }
 
 static constexpr int TRIGGER_HEIGHT = 8;
@@ -577,25 +548,10 @@ void KoolDock::setContainsMouse(bool contains)
             m_hideTimer.start(200);
         }
     }
-    // Non-autohide: resize the window to just the pill height when the
-    // cursor is outside, and to the full size (with zoom overflow room)
-    // when the cursor enters. This keeps the transparent overflow area
-    // from intercepting clicks on windows above the dock.
-    //
-    // Growing happens immediately, so the icons have room to zoom into.
-    // Shrinking is delayed by zoomSpeed instead: the Wayland surface
-    // resize is an instant hard cut that no QML Behavior can animate, so
-    // shrinking right away would clip the icons mid zoom-out — they
-    // haven't visually shrunk back to restingSize yet. Waiting lets that
-    // animation finish first.
-    if (m_layer && !KoolDockSettings::autoHide() && !m_dragExpanded && !m_dragActive) {
-        if (contains) {
-            m_shrinkTimer.stop();
-            applyLayerShell();
-        } else {
-            m_shrinkTimer.start(KoolDockSettings::zoomSpeed());
-        }
-    }
+    // Non-autohide: the window is always full-screen size — no resize
+    // on hover enter/leave.  The transparent overflow area may intercept
+    // clicks on windows above the dock; use setExclusiveZone for proper
+    // work-area reservation instead of shrinking the window.
     Q_EMIT containsMouseChanged();
 }
 

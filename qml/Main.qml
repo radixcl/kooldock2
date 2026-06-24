@@ -54,13 +54,19 @@ Item {
     implicitWidth:  dockWidth
     implicitHeight: dockHeight
 
-    // Track hover in window coordinates and hand the bar only stable inputs
-    // (this width, this position) — DockBar projects them onto its own
-    // frame internally. See the comment in DockBar.qml for why that has to
-    // happen there rather than here: the bar's on-screen position is itself
-    // derived from its content width, so computing "mouse relative to the
-    // bar's position" up here would make the two chase each other.
-    HoverHandler { id: hoverHandler }
+    // Limit the HoverHandler to the dock area at the anchored edge — the
+    // window is full-screen so raw HoverHandler on root would fire on every
+    // pixel, spamming layout() at 60 fps with the mouse anywhere on screen.
+    Item {
+        id: hoverZone
+        x: vertical ? (edge === Qt.LeftEdge ? 0 : parent.width - shortSize)
+                    : 0
+        y: vertical ? 0
+                    : (edge === Qt.TopEdge ? 0 : parent.height - shortSize)
+        width:  vertical ? shortSize : parent.width
+        height: vertical ? parent.height : shortSize
+        HoverHandler { id: hoverHandler }
+    }
     readonly property bool containsMouse: dockBar.containsMouse || dockBar.frozen
                                             || (kooldock ? kooldock.dragActive : false)
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
@@ -268,11 +274,15 @@ Item {
             // re-trigger layout() to notice the mouse is gone. Force a
             // clearly out-of-range value instead, so containsMouse properly
             // drops to false and the dock shrinks back.
+            // point.position is relative to hoverZone, not root — add
+            // hoverZone's offset so the values are root-relative.
             globalMousePos: hoverHandler.hovered
-                            ? (vertical ? hoverHandler.point.position.y : hoverHandler.point.position.x)
+                            ? (vertical ? hoverZone.y + hoverHandler.point.position.y
+                                        : hoverZone.x + hoverHandler.point.position.x)
                             : -100000
             globalCrossPos: hoverHandler.hovered
-                            ? (vertical ? hoverHandler.point.position.x : hoverHandler.point.position.y)
+                            ? (vertical ? hoverZone.x + hoverHandler.point.position.x
+                                        : hoverZone.y + hoverHandler.point.position.y)
                             : -100000
         }
     }
