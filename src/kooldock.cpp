@@ -123,7 +123,17 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
             this, [this]() { reconfigure(); });
     refreshScreens();
     connect(qApp, &QGuiApplication::screenAdded,   this, [this](QScreen *) { refreshScreens(); });
-    connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen *) { refreshScreens(); });
+    connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen *s) {
+        refreshScreens();
+        // If the configured screen was the one that disappeared, clear the
+        // setting so the dock falls back to primary and re-apply the layer.
+        if (KoolDockSettings::screenName() == s->name()) {
+            KoolDockSettings::setScreenName(QString());
+            KoolDockSettings::self()->save();
+            Q_EMIT screenNameChanged();
+            applyLayerShell();
+        }
+    });
     reconfigure();
 }
 
