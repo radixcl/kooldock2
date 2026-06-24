@@ -198,18 +198,15 @@ void KoolDock::setupView()
     }
 }
 
-// Known cosmetic issue: every real resize this function triggers (hover
-// grow/shrink, tooltip grow/shrink, drag-expand) can show a single-frame
-// flicker where the compositor stretches the previous buffer to the new
-// size before Qt repaints the new content. LayerShellQt::Window doesn't
-// expose a hook to wait for the compositor's configure ack before
-// resizing, and m_view->resize() (paired with setDesiredSize() below) has
-// been the resize mechanism since the project's first commit, so this
-// isn't something introduced here — just more noticeable now that the
-// window resizes far more often than it used to (every hover/tooltip
-// transition, not just auto-hide). Investigated and accepted as a minor
-// trade-off rather than reworked, since fixing it properly means
-// touching the resize path every caller depends on.
+// Resize strategy: setDesiredSize() is the only way we ask the compositor
+// for a new layer surface size. The earlier paired m_view->resize() call
+// forced the QWindow to its new geometry before QtWayland had produced a
+// buffer of that size, so for one frame the compositor stretched the
+// previous buffer to the new surface size — a visible flicker on every
+// hover/tooltip/drag resize. Letting setDesiredSize() drive the resize
+// means QtWayland only commits the new surface geometry together with a
+// matching buffer, after acking the compositor's configure event, so no
+// frame with a size-mismatched buffer is ever presented.
 void KoolDock::applyLayerShell()
 {
     if (!m_view) {
@@ -294,7 +291,6 @@ void KoolDock::applyLayerShell()
         }
     }
     m_layer->setDesiredSize(size);
-    if (m_view) m_view->resize(size);
     m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
     m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
     if (!overlay) {
