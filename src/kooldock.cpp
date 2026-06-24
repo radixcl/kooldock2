@@ -462,20 +462,6 @@ void KoolDock::applyBlur()
 {
     if (!m_view) return;
     if (KoolDockSettings::blurBackground()) {
-        // Blur only the background pill's actual current bounds, kept in
-        // sync with the QML side via updateBlurRegion() as it resizes with
-        // the zoom — not the wider reserved overflow area, which must stay
-        // transparent. QML reports the pill's position and length along
-        // the dock's long axis (pos/length) plus the short-axis offset
-        // (shortOffset — the slide transform's displacement during the
-        // auto-hide animation); we reconstruct the full rect from the edge
-        // orientation. On horizontal edges the long axis is x and the
-        // short axis (bgHeight) is y; on vertical edges they swap. The
-        // region is rounded to match the pill's radius; a plain rectangular
-        // region would blur the four corners that the rounded rectangle
-        // leaves transparent. Don't clamp pos to 0: during the auto-hide
-        // slide the pill (and its blur) move off-screen, and clamping would
-        // keep a blurred rectangle pinned at the edge.
         const qreal pos = m_blurPos;
         const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
         const qreal shortOffset = m_blurShortOffset;
@@ -489,9 +475,16 @@ void KoolDock::applyBlur()
             const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
             rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
         }
-    QPainterPath path;
-    path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
-        KWindowEffects::enableBlurBehind(m_view, true, QRegion(path.toFillPolygon().toPolygon()));
+        // Use a plain QRegion from the rect directly.  The previous
+        // QPainterPath → addRoundedRect → toFillPolygon → toPolygon
+        // chain could produce an empty region for certain rect sizes
+        // (integer rounding of the curved corners collapsing to zero),
+        // which KWin treats as "no blur" — visible as a one-frame
+        // background disappearance during the zoom animation.
+        const QRect r = rect.toAlignedRect();
+        if (r.isEmpty())
+            return;
+        KWindowEffects::enableBlurBehind(m_view, true, QRegion(r));
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);
     }
