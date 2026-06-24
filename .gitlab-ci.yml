@@ -5,6 +5,7 @@
 # 1. Enable CI/CD in your GitLab project settings
 # 2. Ensure you have a GitLab Runner with Docker executor available
 #
+# Pipeline triggers on every push to dev/main and on tags (releases).
 # The generated .deb can be downloaded from the pipeline artifacts
 # and installed with:  sudo dpkg -i kooldock2-*.deb
 
@@ -16,12 +17,16 @@ variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
 # ── Ubuntu 24.04 LTS (Noble) build ──────────────────────────────
-# Uses the latest Ubuntu LTS image with KDE Plasma 6 / Qt 6 packages.
-# The same pipeline works for Kubuntu 24.04 and later.
+# Compatible with Kubuntu 24.04+ / KDE Plasma 6 / Qt 6.
+# Runs on every push to dev/main and on version tags.
 
 build:noble:
   stage: build
   image: ubuntu:24.04
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
   artifacts:
     name: "kooldock2-${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}"
     paths:
@@ -74,11 +79,4 @@ build:noble:
   script:
     - cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
     - cmake --build build --parallel $(nproc)
-    # Package as .deb via CPack
-    - cd build
-    - cpack -G DEB --config CPackConfig.cmake 2>/dev/null || cpack -G DEB 2>/dev/null || echo "CPack not configured; binary available at build/bin/kooldock2"
-    # Fallback: copy binary if cpack fails
-    - mkdir -p artifacts
-    - cp -v bin/kooldock2 artifacts/ 2>/dev/null || true
-    - cp -v *.deb artifacts/ 2>/dev/null || true
-    - cp -rv artifacts ../build/artifacts 2>/dev/null || true
+    - cd build && cpack -G DEB
