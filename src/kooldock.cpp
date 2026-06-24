@@ -488,6 +488,7 @@ void KoolDock::showPreferences()
 {
     auto *dialog = new QQuickView();
     dialog->setFlag(Qt::Dialog);
+    dialog->setFlag(Qt::WindowStaysOnTopHint);
     // Unlike the main dock view, this is a plain desktop window with no
     // layer-shell surface dictating its size, so let it size itself to the
     // QML content's implicit size instead of the other way around — with
