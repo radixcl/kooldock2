@@ -175,7 +175,7 @@ void KoolDock::setDragExpanded(bool expanded)
 {
     if (m_dragExpanded == expanded) return;
     m_dragExpanded = expanded;
-    applyLayerShell();
+    // Window is always full-screen; drag tracking works anywhere.
 }
 QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
@@ -263,31 +263,10 @@ void KoolDock::applyLayerShell()
 
     const int bgHeight = KoolDockSettings::dockHeight();
     const bool overlay = autoHide() || edgeMargin != 0;
-    // Window covers just the pill + icon overflow; sized by
-    // maxDockWidth/Height.  Every resize is driven by setDesiredSize()
-    // which avoids the one-frame buffer-stretch flicker.
+    // Window is always full-screen.  The pill is positioned at the
+    // anchored edge by QML bindings; rest is transparent.  Input is
+    // restricted to the pill area / trigger strip by applyInputMask().
     QSize size(maxDockWidth(), maxDockHeight());
-    // During an internal icon drag, expand the window along its short
-    // axis so the DragHandler keeps tracking the cursor.
-    if (m_dragExpanded) {
-        constexpr int dragExpandShort = 300;
-        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-        if (vert) {
-            size.rwidth() += dragExpandShort;
-        } else {
-            size.rheight() += dragExpandShort;
-        }
-    }
-    // Non-autohide: shrink to just bgHeight when not hovered so the
-    // transparent overflow doesn't intercept clicks on windows behind.
-    if (!autoHide() && !m_dragExpanded && !m_containsMouse && !m_dragActive) {
-        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-        if (vert) {
-            size.setWidth(bgHeight);
-        } else {
-            size.setHeight(bgHeight);
-        }
-    }
 #ifdef LAYERSHELLQT_HAS_SET_DESIRED_SIZE
     m_layer->setDesiredSize(size);
 #else
@@ -305,9 +284,7 @@ void KoolDock::applyLayerShell()
         }
     }
 
-    if (autoHide()) {
-        applyInputMask(!m_containsMouse);
-    }
+    applyInputMask(!m_containsMouse);
 }
 
 void KoolDock::applyGeometry()
@@ -381,16 +358,21 @@ int KoolDock::maxDockShortSize() const
 
 int KoolDock::maxDockWidth() const
 {
-    // Window width = long axis on horizontal edges, short axis on vertical.
-    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-    return vert ? maxDockShortSize() : maxDockLongSize();
+    // Window covers the full screen so it never resizes — no
+    // buffer-stretch flicker, no hover grow/shrink, no tooltip grow.
+    // The pill is positioned at the anchored edge by QML bindings;
+    // the rest is transparent.  Input is restricted to the pill area
+    // by applyInputMask() so clicks pass through to windows behind.
+    if (auto *s = QGuiApplication::primaryScreen())
+        return s->size().width();
+    return 1920;
 }
 
 int KoolDock::maxDockHeight() const
 {
-    // Window height = short axis on horizontal edges, long axis on vertical.
-    const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
-    return vert ? maxDockLongSize() : maxDockShortSize();
+    if (auto *s = QGuiApplication::primaryScreen())
+        return s->size().height();
+    return 1080;
 }
 
 static constexpr int TRIGGER_HEIGHT = 8;
@@ -399,22 +381,42 @@ void KoolDock::applyInputMask(bool hidden)
 {
     if (!m_view) return;
     if (!hidden) {
+        // Full input: clear any mask so the entire surface receives
+        // pointer and touch events.
         m_view->setMask(QRegion());
         return;
     }
-    // Restrict input to the trigger strip at the anchored edge (autohide
-    // only).  Non-autohide doesn't use an input mask — the window is
-    // sized to the pill area when not hovering.
     const int w = maxDockWidth();
     const int h = maxDockHeight();
-    QRect strip;
-    switch (screenEdge()) {
-    case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
-    case Qt::TopEdge:    strip = QRect(0, 0, w, TRIGGER_HEIGHT); break;
-    case Qt::LeftEdge:   strip = QRect(0, 0, TRIGGER_HEIGHT, h); break;
-    case Qt::RightEdge:  strip = QRect(w - TRIGGER_HEIGHT, 0, TRIGGER_HEIGHT, h); break;
+    const int bgHeight = KoolDockSettings::dockHeight();
+
+    if (autoHide()) {
+        // Autohide: restrict to an 8 px trigger strip at the anchored edge.
+        QRect strip;
+        switch (screenEdge()) {
+        case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
+        case Qt::TopEdge:    strip = QRect(0, 0, w, TRIGGER_HEIGHT); break;
+        case Qt::LeftEdge:   strip = QRect(0, 0, TRIGGER_HEIGHT, h); break;
+        case Qt::RightEdge:  strip = QRect(w - TRIGGER_HEIGHT, 0, TRIGGER_HEIGHT, h); break;
+        }
+        m_view->setMask(QRegion(strip));
+    } else {
+        // Non-autohide: restrict to the pill area so clicks on windows
+        // behind the full-screen transparent overflow pass through.
+        const int pillLen = maxDockLongSize();
+        const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+        QRect rect;
+        if (vert) {
+            const qreal baseX = (screenEdge() == Qt::RightEdge) ? (w - bgHeight) : 0;
+            const qreal centerY = (h - pillLen) / 2;
+            rect = QRect(baseX, centerY, bgHeight, pillLen);
+        } else {
+            const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (h - bgHeight);
+            const qreal centerX = (w - pillLen) / 2;
+            rect = QRect(centerX, baseY, pillLen, bgHeight);
+        }
+        m_view->setMask(QRegion(rect));
     }
-    m_view->setMask(QRegion(strip));
 }
 
 void KoolDock::applyBlur()
@@ -488,6 +490,7 @@ void KoolDock::showPreferences()
 {
     auto *dialog = new QQuickView();
     dialog->setFlag(Qt::Dialog);
+    dialog->setFlag(Qt::WindowStaysOnTopHint);
     // Unlike the main dock view, this is a plain desktop window with no
     // layer-shell surface dictating its size, so let it size itself to the
     // QML content's implicit size instead of the other way around — with
@@ -550,15 +553,11 @@ void KoolDock::setContainsMouse(bool contains)
             m_hideTimer.start(200);
         }
     }
-    // Non-autohide: grow the window immediately so icons have room to
-    // zoom into; shrink is delayed so the animation can finish first.
-    if (m_layer && !KoolDockSettings::autoHide() && !m_dragExpanded && !m_dragActive) {
-        if (contains) {
-            m_shrinkTimer.stop();
-            applyLayerShell();
-        } else {
-            m_shrinkTimer.start(KoolDockSettings::zoomSpeed());
-        }
+    // Non-autohide: toggle the input mask between full (hovering) and
+    // pill-only (not hovering) so clicks pass through the transparent
+    // overflow to windows behind the full-screen dock.
+    if (m_layer && !KoolDockSettings::autoHide()) {
+        applyInputMask(!contains);
     }
     Q_EMIT containsMouseChanged();
 }
