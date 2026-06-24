@@ -179,6 +179,30 @@ below were only caught this way.
    *not* split into a real list by `KService::property<QStringList>()` here
    and the check always fails.
 
+10. **`setDesiredSize` is the only resize API that avoids buffer-stretch
+    flicker.** The Wayland layer-shell pipeline works as follows:
+    `setDesiredSize()` tells the compositor the intended size *without*
+    immediately resizing the QWindow.  The compositor sends a configure
+    event; QtWayland acks it, renders a new buffer at the new size, and
+    commits surface geometry + buffer together.  No frame ever shows a
+    mismatched size → buffer stretch.
+
+    Using `m_view->setMinimumSize/setMaximumSize` or `m_view->resize()`
+    instead forces the QWindow to its new geometry *before* a matching
+    buffer exists.  For one frame the compositor stretches the previous
+    buffer to the new surface size — a visible vertical/horizontal
+    stretch of every icon on every hover/tooltip/drag resize that was
+    reported and fixed twice (commits 56a215f and 2fa6d26).
+
+    On older distros (Ubuntu ≤ 25.04) `setDesiredSize` may not be
+    declared in the LayerShellQt header.  The CMake in `src/CMakeLists.txt`
+    detects this with `file(STRINGS … REGEX "setDesiredSize")` and
+    falls back to `setMinimumSize/setMaximumSize` only on those systems.
+    **Do not** remove the `#ifdef` or collapse the two paths into one:
+    the fallback is acceptable only for CI artifacts; production builds
+    on any distro shipping LayerShellQt ≥ 6.6.4 **must** use
+    `setDesiredSize`.
+
 ## Settings wiring pattern
 
 Geometry settings (icon sizes, spacing, zoom amount/speed) flow from the
@@ -204,3 +228,7 @@ shipped and clipped the tops of fully-zoomed icons.
 - Don't add a recentring/offset mechanism to `DockBar.qml`/`Main.qml`
   without re-deriving the stability argument in invariants #1–2 (ideally
   with a quick numeric simulation, not just inspection).
+- Don't replace `m_layer->setDesiredSize()` with `m_view->setMinimumSize`/
+  `setMaximumSize` or `m_view->resize()` — see invariant #10.  This was
+  done once (to fix a CI build on Ubuntu 25.04) and immediately
+  reintroduced the buffer-stretch flicker that 56a215f had fixed.
