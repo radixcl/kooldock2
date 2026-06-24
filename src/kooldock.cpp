@@ -462,45 +462,52 @@ void KoolDock::applyBlur()
 {
     if (!m_view) return;
     if (KoolDockSettings::blurBackground()) {
-        // Blur only the background pill's actual current bounds, kept in
-        // sync with the QML side via updateBlurRegion() as it resizes with
-        // the zoom — not the wider reserved overflow area, which must stay
-        // transparent. QML reports the pill's position and length along
-        // the dock's long axis (pos/length) plus the short-axis offset
-        // (shortOffset — the slide transform's displacement during the
-        // auto-hide animation); we reconstruct the full rect from the edge
-        // orientation. On horizontal edges the long axis is x and the
-        // short axis (bgHeight) is y; on vertical edges they swap. The
-        // region is rounded to match the pill's radius; a plain rectangular
-        // region would blur the four corners that the rounded rectangle
-        // leaves transparent. Don't clamp pos to 0: during the auto-hide
-        // slide the pill (and its blur) move off-screen, and clamping would
-        // keep a blurred rectangle pinned at the edge.
-        const qreal pos = m_blurPos;
-        const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
-        const qreal shortOffset = m_blurShortOffset;
+        // Use a fixed, maximum-sized blur region instead of tracking the
+        // pill's animated geometry on every frame.  Updating the blur
+        // region 60 times/sec during the zoom animation causes KWin to
+        // drop the blur for a frame while it regenerates — exactly the
+        // same compositor-side race as the buffer-stretch flicker solved
+        // in maxDockShortSize().  A fixed region that covers all possible
+        // pill sizes is generated once and stays valid regardless of how
+        // the icons zoom.
+        //
+        // The region is centered along the long axis at its maximum span
+        // (maxDockLongSize(), with a small margin so the blurred strip
+        // doesn't visibly extend past the pill at rest) and bgHeight tall
+        // along the short axis.  Only the slide offset (shortOffset) is
+        // dynamic — it tracks the auto-hide slide animation, which is
+        // infrequent (200ms, only on show/hide).
         const int bgHeight = KoolDockSettings::dockHeight();
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
+        const int viewW = m_view->width();
+        const int viewH = m_view->height();
+        // Max pill length along the long axis (mirrors layout() worst case
+        // plus some padding for the spacing margin).
+        const int maxLen = maxDockLongSize() - 4;
         QRectF rect;
         if (vert) {
-            const qreal baseX = (screenEdge() == Qt::RightEdge) ? (m_view->width() - bgHeight) : 0;
-            rect = QRectF(baseX + shortOffset, pos, bgHeight, length);
+            const qreal baseX = (screenEdge() == Qt::RightEdge) ? (viewW - bgHeight) : 0;
+            const qreal centerY = (viewH - maxLen) / 2.0;
+            rect = QRectF(baseX + m_blurShortOffset, centerY, bgHeight, maxLen);
         } else {
-            const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
-            rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
+            const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (viewH - bgHeight);
+            const qreal centerX = (viewW - maxLen) / 2.0;
+            rect = QRectF(centerX, baseY + m_blurShortOffset, maxLen, bgHeight);
         }
-    QPainterPath path;
-    path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
+        QPainterPath path;
+        path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
         KWindowEffects::enableBlurBehind(m_view, true, QRegion(path.toFillPolygon().toPolygon()));
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);
     }
 }
 
-void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius)
+void KoolDock::updateBlurRegion(qreal /*longPos*/, qreal /*longLength*/, qreal shortOffset, qreal radius)
 {
-    m_blurPos = longPos;
-    m_blurLength = longLength;
+    // pos and length are ignored — applyBlur() now uses a fixed
+    // maximum-size region (maxDockLongSize()) so the region never
+    // changes during the zoom animation.  Only shortOffset (auto-hide
+    // slide) and radius (settings) are dynamic.
     m_blurShortOffset = shortOffset;
     m_blurRadius = radius;
     applyBlur();
