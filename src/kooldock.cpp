@@ -475,16 +475,18 @@ void KoolDock::applyBlur()
             const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
             rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
         }
-        // Use a plain QRegion from the rect directly.  The previous
-        // QPainterPath → addRoundedRect → toFillPolygon → toPolygon
-        // chain could produce an empty region for certain rect sizes
-        // (integer rounding of the curved corners collapsing to zero),
-        // which KWin treats as "no blur" — visible as a one-frame
-        // background disappearance during the zoom animation.
-        const QRect r = rect.toAlignedRect();
-        if (r.isEmpty())
-            return;
-        KWindowEffects::enableBlurBehind(m_view, true, QRegion(r));
+        // Use a rounded-rect path so the blur doesn't extend past the
+        // pill's corners (which are transparent).  The QPainterPath →
+        // QRegion chain can produce an empty region when integer
+        // rounding collapses the curved-corner polygon to zero; fall
+        // back to a plain aligned rect in that case so KWin never sees
+        // an empty blur region (which it treats as "no blur").
+        QPainterPath path;
+        path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
+        QRegion region(path.toFillPolygon().toPolygon());
+        if (region.isEmpty())
+            region = QRegion(rect.toAlignedRect());
+        KWindowEffects::enableBlurBehind(m_view, true, region);
     } else {
         KWindowEffects::enableBlurBehind(m_view, false);
     }
