@@ -437,8 +437,17 @@ void KoolDock::applyInputMask(bool hidden)
     // (used for wl_data_device::enter during drag-and-drop) stays at the
     // full window size, so drags from external apps can still wake the
     // dock.
-    const int w = m_view->width();
-    const int h = m_view->height();
+    //
+    // Use maxDockWidth()/maxDockHeight() (the *desired* size for the
+    // current orientation) rather than m_view->width()/height() (the
+    // *current* QWindow size). When switching edges (e.g. Bottom → Left),
+    // setDesiredSize has been called but the compositor hasn't yet
+    // configured the new surface size; the trigger strip must match the
+    // eventual window size, not the stale one, or the strip will only
+    // cover a fraction of the edge — the uncovered area never receives
+    // pointer-enter and the dock can't wake up, requiring a restart.
+    const int w = maxDockWidth();
+    const int h = maxDockHeight();
     QRect strip;
     switch (screenEdge()) {
     case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
