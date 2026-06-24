@@ -13,6 +13,7 @@
 #include <QWidgetList> // For WId
 
 class WaylandWindowTasks;
+class QWindow;
 
 class WindowTasks : public QObject
 {
@@ -60,6 +61,8 @@ public:
     void requestToggleState(quint64 windowId, uint32_t bit);
     void requestMinimize(quint64 windowId);
     void requestClose(quint64 windowId);
+    void setMinimizedGeometry(quint64 windowId, QWindow *panel, int x, int y, int w, int h);
+    void unsetMinimizedGeometry(quint64 windowId, QWindow *panel);
 
 public Q_SLOTS:
     void start();

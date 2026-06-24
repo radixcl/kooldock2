@@ -73,6 +73,7 @@ Item {
     property string tooltipFont: "Sans Serif"
     property color tooltipColor: "#f1f1f1"
     property color tooltipShadowColor: "#000000"
+    property bool minimizeAnimation: true
     property bool trashIsEmpty: true
 
     signal emptyTrash()
@@ -450,6 +451,7 @@ Item {
             windowId: model.windowId
             windowCount: model.windowCount
             badgeCount: model.badgeCount
+            kooldock: bar.kooldock
             modelIndex: model.itemIndex
             itemSize: model.sz
             itemPos: model.ipos
@@ -470,6 +472,7 @@ Item {
             tooltipFont: bar.tooltipFont
             tooltipColor: bar.tooltipColor
             tooltipShadowColor: bar.tooltipShadowColor
+            minimizeAnimation: bar.minimizeAnimation
             trashIsEmpty: bar.trashIsEmpty
             barFrozen: bar.frozen
 

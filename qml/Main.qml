@@ -37,6 +37,7 @@ Item {
     readonly property string tooltipFont: settings ? settings.tooltipFont : "Sans Serif"
     readonly property color tooltipColor: settings ? settings.tooltipColor : "#f1f1f1"
     readonly property color tooltipShadowColor: settings ? settings.tooltipShadowColor : "#000000"
+    readonly property bool minimizeAnimation: settings ? settings.minimizeAnimation : true
 
     // Dock geometry along its long and short axes. The long axis is the one
     // icons lay out on (horizontal for Top/BottomEdge, vertical for
@@ -246,6 +247,7 @@ Item {
             tooltipFont: root.tooltipFont
             tooltipColor: root.tooltipColor
             tooltipShadowColor: root.tooltipShadowColor
+            minimizeAnimation: root.minimizeAnimation
             trashIsEmpty: kooldock ? kooldock.trashIsEmpty : true
             onEmptyTrash: { if (kooldock) kooldock.emptyTrash() }
             // Stable inputs from Main.qml: the window's extent along the dock's

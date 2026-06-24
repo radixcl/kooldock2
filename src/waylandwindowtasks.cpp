@@ -60,6 +60,18 @@ void PlasmaWindow::requestToggleState(uint32_t bit)
     set_state(bit, isSet ? 0 : bit);
 }
 
+void PlasmaWindow::setMinimizedGeometry(struct ::wl_surface *panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h)
+{
+    if (!object()) return;
+    set_minimized_geometry(panel, x, y, w, h);
+}
+
+void PlasmaWindow::unsetMinimizedGeometry(struct ::wl_surface *panel)
+{
+    if (!object()) return;
+    unset_minimized_geometry(panel);
+}
+
 void PlasmaWindow::org_kde_plasma_window_title_changed(const QString &title)
 {
     if (m_info.title == title) {
@@ -473,4 +485,9 @@ void WaylandWindowTasks::requestToggleState(quint64 windowId, uint32_t bit)
     if (window) {
         window->requestToggleState(bit);
     }
+}
+
+PlasmaWindow *WaylandWindowTasks::window(quint64 windowId) const
+{
+    return m_management ? m_management->windows().value(windowId) : nullptr;
 }

@@ -32,6 +32,8 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <qnativeinterface.h>
+
 static QString resolveFlatpakIcon(const QString &appId)
 {
     static QHash<QString, QString> cache;
@@ -261,6 +263,21 @@ void KoolDock::setDragExpanded(bool expanded)
     m_dragExpanded = expanded;
     // Window is always full-screen; drag tracking works anywhere.
 }
+
+void KoolDock::setMinimizedGeometry(quint64 windowId, int x, int y, int w, int h)
+{
+    if (!m_tasks || !m_view) return;
+    if (!KoolDockSettings::minimizeAnimation()) return;
+    m_tasks->setMinimizedGeometry(windowId, m_view, x, y, w, h);
+}
+
+void KoolDock::unsetMinimizedGeometry(quint64 windowId)
+{
+    if (!m_tasks || !m_view) return;
+    if (!KoolDockSettings::minimizeAnimation()) return;
+    m_tasks->unsetMinimizedGeometry(windowId, m_view);
+}
+
 QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
 
@@ -636,20 +653,26 @@ void KoolDock::reload()
 
 void KoolDock::showPreferences()
 {
+    // The dock is a full-screen LayerTop surface sitting above normal
+    // windows. Make it transparent to input while the dialog is open
+    // so the user can interact with it. Restore when the dialog closes.
+    m_view->setFlag(Qt::WindowTransparentForInput, true);
+
     auto *dialog = new QQuickView();
     dialog->setFlag(Qt::Dialog);
     dialog->setFlag(Qt::WindowStaysOnTopHint);
-    // Unlike the main dock view, this is a plain desktop window with no
-    // layer-shell surface dictating its size, so let it size itself to the
-    // QML content's implicit size instead of the other way around — with
-    // SizeRootObjectToView and no explicit resize(), the window opened at
-    // Qt's tiny platform-default size and the content never fit.
     dialog->setResizeMode(QQuickView::SizeViewToRootObject);
     dialog->setTitle(i18n("KoolDock Preferences"));
     dialog->rootContext()->setContextObject(new KLocalizedContext(dialog));
     dialog->rootContext()->setContextProperty(QStringLiteral("settings"), KoolDockSettings::self());
     dialog->rootContext()->setContextProperty(QStringLiteral("kooldock"), this);
     dialog->setSource(QUrl(QStringLiteral("qrc:/qml/SettingsDialog.qml")));
+
+    QObject::connect(dialog, &QWindow::visibleChanged, this, [this](bool visible) {
+        if (!visible) {
+            m_view->setFlag(Qt::WindowTransparentForInput, false);
+        }
+    });
     dialog->show();
 }
 

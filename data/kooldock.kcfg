@@ -244,6 +244,10 @@
       <label>Window names that should never appear in the taskbar</label>
       <default></default>
     </entry>
+    <entry name="minimizeAnimation" type="Bool">
+      <label>Animate windows toward the dock icon when minimizing</label>
+      <default>true</default>
+    </entry>
 
     <!-- Navigation / K-Menu -->
     <entry name="showKMenu" type="Bool">

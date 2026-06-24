@@ -12,6 +12,7 @@
 
 #include <QDebug>
 #include <QGuiApplication>
+#include <QWindow>
 #include <qnativeinterface.h>
 
 #include <netwm.h>
@@ -133,6 +134,27 @@ void WindowTasks::requestToggleState(quint64 windowId, uint32_t bit)
     if (m_waylandTasks) {
         m_waylandTasks->requestToggleState(windowId, bit);
     }
+}
+
+void WindowTasks::setMinimizedGeometry(quint64 windowId, QWindow *panel, int x, int y, int w, int h)
+{
+    if (!m_waylandTasks || !panel) return;
+    PlasmaWindow *pw = m_waylandTasks->window(windowId);
+    if (!pw) return;
+    // On Wayland, QWindow::winId() returns a wl_surface* cast to WId.
+    auto *surface = reinterpret_cast<struct ::wl_surface *>(panel->winId());
+    if (!surface) return;
+    pw->setMinimizedGeometry(surface, x, y, w, h);
+}
+
+void WindowTasks::unsetMinimizedGeometry(quint64 windowId, QWindow *panel)
+{
+    if (!m_waylandTasks || !panel) return;
+    PlasmaWindow *pw = m_waylandTasks->window(windowId);
+    if (!pw) return;
+    auto *surface = reinterpret_cast<struct ::wl_surface *>(panel->winId());
+    if (!surface) return;
+    pw->unsetMinimizedGeometry(surface);
 }
 
 QList<quint64> WindowTasks::windowIds() const

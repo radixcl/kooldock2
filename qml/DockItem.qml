@@ -36,6 +36,8 @@ Item {
     property color tooltipShadowColor: "#000000"
     property bool trashIsEmpty: true
     property bool barFrozen: false
+    property var kooldock: null
+    property bool minimizeAnimation: true
 
     // Drag-and-drop state. When dragging, the item is lifted (scale +
     // shadow), follows the cursor, and the bar handles reordering or
@@ -499,6 +501,23 @@ Item {
         ParallelAnimation {
             NumberAnimation { target: clickBounce; property: "xScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
             NumberAnimation { target: clickBounce; property: "yScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
+        }
+    }
+
+    // Minimize animation target: tell KWin where this icon is so the
+    // window minimize animation can fly toward it. Update periodically
+    // while the item has a window (position changes with zoom).
+    // The geometry is in root-window coordinates, which matches the
+    // panel surface since the window is full-screen and screen-anchored.
+    Timer {
+        id: geomTimer
+        interval: 150
+        repeat: true
+        running: minimizeAnimation && (isTask || isRunning) && windowId
+        onTriggered: {
+            if (!windowId || !kooldock) return
+            const pt = mapToItem(null, 0, 0)
+            kooldock.setMinimizedGeometry(windowId, pt.x, pt.y, width, height)
         }
     }
 

@@ -397,6 +397,12 @@ Item {
                         checked: settings ? settings.showNotifications : true
                         onToggled: { if (settings) settings.showNotifications = checked }
                     }
+                    CheckBox {
+                        text: i18n("Animate windows toward the dock icon when minimizing")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.minimizeAnimation : true
+                        onToggled: { if (settings) settings.minimizeAnimation = checked }
+                    }
 
                     Label { text: i18n("Running Indicator"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
                     RowLayout {
@@ -480,22 +486,25 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Font:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
-                        TextField {
-                            Layout.preferredWidth: 160
-                            text: settings ? settings.tooltipFont : "Sans Serif"
-                            onEditingFinished: { if (settings) settings.tooltipFont = text }
+                        Button {
+                            id: fontButton
+                            text: (settings ? settings.tooltipFont : "Sans Serif") +
+                                  " " + (settings ? settings.tooltipSize : 12) + "px"
+                            onClicked: fontDialog.open()
                         }
-                        Item { Layout.fillWidth: true }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 6
-                        Label { text: i18n("Size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
-                        SpinBox {
-                            from: 6; to: 72; stepSize: 1
-                            value: settings ? settings.tooltipSize : 12
-                            onValueModified: { if (settings) settings.tooltipSize = value }
+                        FontDialog {
+                            id: fontDialog
+                            title: i18n("Select Tooltip Font")
+                            options: FontDialog.ScalableFonts | FontDialog.MonospacedFonts | FontDialog.ProportionalFonts
+                            currentFont.family: settings ? settings.tooltipFont : "Sans Serif"
+                            currentFont.pixelSize: settings ? settings.tooltipSize : 12
+                            onAccepted: {
+                                if (settings) {
+                                    settings.tooltipFont = selectedFont.family
+                                    settings.tooltipSize = selectedFont.pixelSize
+                                }
+                            }
                         }
-                        Label { text: i18n("px — font pixel size"); opacity: 0.45 }
                         Item { Layout.fillWidth: true }
                     }
                     RowLayout {

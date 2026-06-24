@@ -62,6 +62,8 @@ public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
     Q_INVOKABLE void setDragActive(bool active);
     Q_INVOKABLE void setDragExpanded(bool expanded);
+    Q_INVOKABLE void setMinimizedGeometry(quint64 windowId, int x, int y, int w, int h);
+    Q_INVOKABLE void unsetMinimizedGeometry(quint64 windowId);
     // How far beyond the icon footprint the currently-visible in-scene
     // tooltip needs, along the dock's short axis — 0 when none is
     // showing. Grows the real window immediately (no animation to race
