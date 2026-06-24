@@ -487,6 +487,10 @@ Item {
                     bar.showTrashMenu(pt)
                     return
                 }
+                if (model.isLauncher && !model.isRunning) {
+                    dockMenu.popup(pt)
+                    return
+                }
                 bar.showMenu(delegateItem, pt)
             }
 
