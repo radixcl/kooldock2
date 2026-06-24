@@ -122,6 +122,7 @@ Item {
     // only ever read while the menu is visible.
     property var contextMenuState: ({})
     property var contextMenuActions: []
+    property var contextWindowList: []
 
     // True while any menu (context menu or dock-wide right-click menu) is
     // visible.  Main.qml feeds this into containsMouse so the dock stays
@@ -137,6 +138,8 @@ Item {
             ? bar.kooldock.windowActions.queryState(item.windowId) : ({})
         contextMenuActions = ((item.isLauncher || item.isTask) && bar.kooldock && bar.kooldock.model)
             ? bar.kooldock.model.desktopActions(item.modelIndex) : []
+        contextWindowList = (item.windowId && bar.kooldock && bar.kooldock.model)
+            ? bar.kooldock.model.windowListForRow(item.modelIndex) : []
         contextMenu.popup(pt)
     }
     function hideMenu() {
@@ -155,8 +158,8 @@ Item {
             const d = m.itemData(i)
             listModel.append({name: d.name, iconName: d.iconName, isTask: d.isTask,
                              isLauncher: d.isLauncher, isAppMenu: d.isAppMenu, isTrash: d.isTrash,
-                             isRunning: d.isRunning, windowId: d.windowId, itemIndex: d.itemIndex,
-                             badgeCount: d.badgeCount, sz: smallSize, ipos: 0})
+                             isRunning: d.isRunning, windowId: d.windowId, windowCount: d.windowCount,
+                             itemIndex: d.itemIndex, badgeCount: d.badgeCount, sz: smallSize, ipos: 0})
         }
         layout()
     }
@@ -445,6 +448,7 @@ Item {
             isTrash: model.isTrash
             isRunning: model.isRunning
             windowId: model.windowId
+            windowCount: model.windowCount
             badgeCount: model.badgeCount
             modelIndex: model.itemIndex
             itemSize: model.sz
@@ -615,6 +619,27 @@ Item {
 
         MenuSeparator {
             visible: contextMenuItem && (contextMenuItem.isLauncher || bar.contextMenuActions.length > 0)
+        }
+
+        // Window list — shown when multiple windows are grouped under one
+        // icon (KDE taskbar-style grouping). Each item activates that
+        // specific window.
+        Instantiator {
+            model: bar.contextWindowList
+            delegate: MenuItem {
+                required property var modelData
+                text: modelData.title || ""
+                onTriggered: {
+                    if (bar.kooldock && bar.kooldock.model)
+                        bar.kooldock.model.activateSpecificWindow(modelData.windowId)
+                }
+            }
+            onObjectAdded: (index, object) => contextMenu.insertItem(index, object)
+            onObjectRemoved: (index, object) => contextMenu.removeItem(object)
+        }
+
+        MenuSeparator {
+            visible: contextMenuItem && bar.contextWindowList.length > 0
         }
 
         // Window management — only for running tasks or fused launchers.

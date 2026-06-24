@@ -23,7 +23,7 @@ class DockModel : public QAbstractListModel
     Q_PROPERTY(QVariantList items READ items NOTIFY itemsChanged)
 
 public:
-    explicit DockModel(WindowTasks *tasks, QObject *parent = nullptr);
+    explicit DockModel(WindowTasks *tasks, bool debug = false, QObject *parent = nullptr);
     ~DockModel() override;
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -35,9 +35,11 @@ public:
 
     Q_INVOKABLE void activate(int row);
     Q_INVOKABLE void activateWindow(quint64 windowId);
+    Q_INVOKABLE void activateSpecificWindow(quint64 windowId);
     Q_INVOKABLE void launch(int row);
     Q_INVOKABLE void newWindow(int row);
     Q_INVOKABLE QVariantMap itemData(int row) const;
+    Q_INVOKABLE QVariantList windowListForRow(int row) const;
     Q_INVOKABLE void addLauncher(const QString &filePath);
     Q_INVOKABLE void removeLauncher(int row);
     Q_INVOKABLE void moveLauncher(int from, int to);
@@ -76,6 +78,7 @@ private:
     int insertTaskSorted(Item *item);
     bool shouldShowTask(const WindowTasks::TaskData &data) const;
     Item *findLauncherForAppId(const QString &appId) const;
+    Item *findTaskForAppId(const QString &appId) const;
     QString desktopPathForAppId(const QString &appId) const;
     QString desktopFileForRow(int row) const;
 
@@ -85,8 +88,10 @@ private:
     UnityLauncherWatcher *m_launcherWatcher;
     WindowTasks *m_tasks = nullptr;
     quint64 m_activeWindow = 0;
+    quint64 m_lastActivatedWindow = 0;
     bool m_suppressReload = false;
     bool m_loading = false;
+    bool m_debug = false;
 };
 
 #endif

@@ -57,8 +57,8 @@ int main(int argc, char *argv[])
         i18n("Show configuration window on start"));
     QCommandLineOption killOption(QStringList() << QStringLiteral("k") << QStringLiteral("kill"),
         i18n("Kill all running kooldock2 instances"));
-    QCommandLineOption debugBoundsOption(QStringList() << QStringLiteral("d") << QStringLiteral("debug-bounds"),
-        i18n("Draw the dock window's real (otherwise invisible) bounds, for debugging hover/resize behavior"));
+    QCommandLineOption debugBoundsOption(QStringList() << QStringLiteral("d") << QStringLiteral("debug"),
+        i18n("Enable debug logging and draw the dock window's real (otherwise invisible) bounds"));
     parser.addOption(optionsOption);
     parser.addOption(killOption);
     parser.addOption(debugBoundsOption);

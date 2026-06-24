@@ -12,6 +12,7 @@ Item {
     property bool isTrash: false
     property bool isRunning: false
     property var windowId: 0
+    property int windowCount: 0
     property int badgeCount: 0
     property int modelIndex: -1
     property real itemSize: 48
@@ -228,7 +229,21 @@ Item {
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
         width: taskDotSize; height: taskDotSize; radius: taskDotSize / 2
-        color: taskDotColor; visible: (isTask || isRunning) && !isAppMenu && !isTrash; opacity: taskDotOpacity
+        color: taskDotColor; visible: (isTask || isRunning) && !isAppMenu && !isTrash && windowCount <= 1; opacity: taskDotOpacity
+    }
+
+    // Window count badge for grouped windows (>1)
+    Text {
+        visible: windowCount > 1 && !isAppMenu && !isTrash
+        text: windowCount
+        font.pixelSize: Math.max(9, item.itemSize * 0.2)
+        font.weight: Font.Bold
+        color: taskDotColor
+        opacity: taskDotOpacity
+        x: vertical ? (edge === Qt.LeftEdge ? 2 : (parent.width - width - 2))
+                    : (parent.width - width) / 2
+        y: vertical ? (parent.height - height) / 2
+                    : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
     }
 
     // Notification badge (unread count via the Unity LauncherEntry DBus
