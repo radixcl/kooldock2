@@ -302,7 +302,11 @@ void KoolDock::applyLayerShell()
                 break;
             }
         }
+#ifdef LAYERSHELLQT_HAS_SET_SCREEN
         m_layer->setScreen(chosen);
+#else
+        m_view->setScreen(chosen);
+#endif
     }
 
     // Edge margin: a negative value pushes the dock past other panels

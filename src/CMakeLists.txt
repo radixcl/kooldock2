@@ -53,6 +53,10 @@ file(STRINGS "/usr/include/LayerShellQt/window.h" _ls_api REGEX "setDesiredSize"
 if(_ls_api)
     target_compile_definitions(kooldock2 PRIVATE LAYERSHELLQT_HAS_SET_DESIRED_SIZE=1)
 endif()
+file(STRINGS "/usr/include/LayerShellQt/window.h" _ls_screen REGEX "void setScreen")
+if(_ls_screen)
+    target_compile_definitions(kooldock2 PRIVATE LAYERSHELLQT_HAS_SET_SCREEN=1)
+endif()
 
 target_link_libraries(kooldock2 PRIVATE
     Qt6::Core
