@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(kooldock2 VERSION 0.0.1 LANGUAGES CXX C)
+project(kooldock2 VERSION 0.0.2 LANGUAGES CXX C)
 
 set(PROJECT_BUG_ADDRESS "https://github.com/anomalyco/kooldock2/issues")
 
