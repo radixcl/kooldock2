@@ -68,7 +68,6 @@ target_link_libraries(kooldock2 PRIVATE
     KF6::XmlGui
     KF6::I18n
     KF6::ColorScheme
-    KF6::Kirigami2
     LayerShellQtInterface
 )
 

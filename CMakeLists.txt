@@ -47,7 +47,6 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
     XmlGui
     I18n
     ColorScheme
-    Kirigami2
 )
 
 find_package(LayerShellQt REQUIRED)

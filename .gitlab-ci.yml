@@ -61,7 +61,6 @@ build:plucky:
         libkf6xmlgui-dev
         libkf6i18n-dev
         libkf6colorscheme-dev
-        kirigami2-dev
         liblayershellqtinterface-dev
         libwayland-dev
         libxcb1-dev
