@@ -145,7 +145,16 @@ void KoolDock::setDragActive(bool active)
     if (m_dragActive == active) return;
     m_dragActive = active;
     Q_EMIT dragActiveChanged();
-    setContainsMouse(active);
+    // Don't call setContainsMouse(active) here: Main.qml's root.containsMouse
+    // already ORs in kooldock.dragActive, so this property change propagates
+    // there and back to setContainsMouse() with the correctly *combined*
+    // value on its own. Calling setContainsMouse(active) directly used to
+    // stomp that — e.g. ending a drag (active=false) while the cursor was
+    // still over the dock forced containsMouse to false even though the
+    // real hover state was (and stayed) true. Since nothing else nudges
+    // root.containsMouse afterward (it never actually changed from QML's
+    // point of view), nothing corrected the mismatch: the window stayed
+    // shrunk until some unrelated hover transition happened to fix it.
 }
 
 void KoolDock::setDragExpanded(bool expanded)

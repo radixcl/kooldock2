@@ -260,12 +260,42 @@ Item {
         }
     }
 
+    // True while the cursor is over the icon and a tooltip is eligible to
+    // show — shared by tooltipShowTimer and tooltipResizeTimer below.
+    readonly property bool tooltipHoverActive: ma.containsMouse && showNames && item.name.length > 0 && !dragActive
+
+    // Flips true tooltipResizeLead ms before the tooltip is actually due to
+    // show — see tooltipExtent for why the window resize needs this early
+    // warning instead of reacting to tooltipBox.opacity directly. It can't
+    // simply start at hover-enter either: that would request a resize on
+    // every brief pass over an icon, even ones whose tooltip never ends up
+    // showing — exactly the thrashing tooltipShowTimer's own delay exists
+    // to avoid.
+    readonly property int tooltipResizeLead: 200
+    property bool tooltipAboutToShow: false
+    Timer {
+        id: tooltipResizeTimer
+        interval: Math.max(tooltipDelay - tooltipResizeLead, 0)
+        repeat: false
+        running: tooltipHoverActive
+        onTriggered: tooltipAboutToShow = true
+    }
+
     // How far beyond the icon's own footprint the tooltip below currently
     // needs, along the dock's short axis (its width on vertical edges,
     // height on horizontal ones since that's the axis it grows along
     // there) — 0 when not showing. DockBar relays this up to KoolDock so
     // the real window can grow to fit it instead of clipping the text.
-    readonly property real tooltipExtent: tooltipBox.opacity > 0.01
+    //
+    // Gated on tooltipAboutToShow rather than tooltipBox.opacity directly:
+    // the window resize this drives is an async Wayland round-trip, but
+    // opacity starts animating the instant the show timer fires. Tying the
+    // resize to opacity alone raced it — the tooltip's fade-in began in a
+    // surface that hadn't grown yet, clipping it mid-fade (visible as a
+    // flick into the wrong place before snapping to its real position).
+    // tooltipBox.width/height stay valid while invisible (only rendering is
+    // gated on opacity), so reading them here ahead of time is safe.
+    readonly property real tooltipExtent: (tooltipAboutToShow || tooltipBox.opacity > 0.01)
         ? (vertical ? tooltipBox.width + 8 : tooltipBox.height + 8) : 0
 
     // Custom in-scene tooltip (macOS-style). Rendered as a child of this
@@ -288,10 +318,10 @@ Item {
 
         // Centered on the icon along the long axis; in the overflow area
         // (away from the screen edge) along the short axis with an 8px gap.
-        x: vertical ? (edge === Qt.LeftEdge ? itemSize + 8 : itemSize - width - 8)
+        x: vertical ? (edge === Qt.LeftEdge ? itemSize + 8 : -width - 8)
                     : (itemSize - width) / 2
         y: vertical ? (itemSize - height) / 2
-                    : (edge === Qt.TopEdge ? itemSize + 8 : itemSize - height - 8)
+                    : (edge === Qt.TopEdge ? itemSize + 8 : -height - 8)
 
         Text {
             id: tooltipText
@@ -317,7 +347,7 @@ Item {
             id: tooltipShowTimer
             interval: tooltipDelay
             repeat: false
-            running: ma.containsMouse && showNames && item.name.length > 0 && !dragActive
+            running: tooltipHoverActive
             onTriggered: {
                 tooltipBox.opacity = 1
                 if (tooltipTimeout > 0) tooltipHideTimer.restart()
@@ -340,6 +370,7 @@ Item {
                     tooltipShowTimer.stop()
                     tooltipHideTimer.stop()
                     tooltipBox.opacity = 0
+                    tooltipAboutToShow = false
                 }
             }
         }
