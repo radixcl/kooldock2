@@ -63,4 +63,16 @@ endif()
 add_subdirectory(src)
 add_subdirectory(data)
 
+# ── CPack / .deb packaging ──────────────────────────────────────
+set(CPACK_GENERATOR "DEB")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Matias Fernandez <matias.fernandez@gmail.com>")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_CONTACT "matias.fernandez@gmail.com")
+set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "qt6-base (>=6.6), qt6-declarative (>=6.6), qt6-wayland, libkf6config6, libkf6coreaddons6, libkf6windowsystem6, libkf6kio6, libkf6i18n6, liblayershellqtinterface6, qml6-module-qtquick-controls"
+)
+set(CPACK_DEBIAN_PACKAGE_SECTION "kde")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://gitlab.com/radixcl/kooldock2")
+include(CPack)
+
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)
