@@ -7,12 +7,11 @@ Item {
     id: root
 
     // `settings` and `kooldock` are injected as context properties by
-    // KoolDock::showPreferences() (kooldock.cpp). Do NOT redeclare them
-    // here: a local `property var` of the same name would shadow the
-    // context property in QML's scope chain, leaving it null and silently
-    // breaking every read/write (the bug that made Apply/OK do nothing).
-    implicitWidth: 520
-    implicitHeight: 440
+    // KoolDock::showPreferences() (kooldock.cpp).  Do NOT redeclare them
+    // here — a local property of the same name would shadow the context
+    // property, leaving it null.
+    implicitWidth: 560
+    implicitHeight: 500
 
     SystemPalette { id: sysPalette }
 
@@ -24,13 +23,14 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 12
+        spacing: 0
 
         TabBar {
             id: tabBar
             Layout.fillWidth: true
-            TabButton { text: i18n("General") }
+            TabButton { text: i18n("Behavior") }
             TabButton { text: i18n("Appearance") }
-            TabButton { text: i18n("Sizes") }
+            TabButton { text: i18n("Icons") }
             TabButton { text: i18n("Tasks") }
             TabButton { text: i18n("Tooltips") }
         }
@@ -40,296 +40,492 @@ Item {
             Layout.fillHeight: true
             currentIndex: tabBar.currentIndex
 
-            // == General ==
-            Flickable {
-                contentHeight: genCol.implicitHeight
-                ScrollBar.vertical: ScrollBar {}
+            // =====================================================
+            //  BEHAVIOR
+            // =====================================================
+            ScrollView {
+                contentWidth: availableWidth
                 ColumnLayout {
-                    id: genCol
                     width: parent.width
-                    CheckBox {
-                        text: i18n("Auto-hide")
-                        checked: settings ? settings.autoHide : false
-                        onToggled: { if (settings) settings.autoHide = checked }
-                    }
+
+                    Label { text: i18n("Position"); font.bold: true; Layout.topMargin: 8; Layout.bottomMargin: 4 }
                     RowLayout {
-                        Label { text: i18n("Show delay (ms):") }
-                        SpinBox {
-                            from: 0; to: 2000; stepSize: 50
-                            value: settings ? settings.hideTimer : 125
-                            onValueModified: { if (settings) settings.hideTimer = value }
-                        }
-                    }
-                    CheckBox {
-                        text: i18n("Hide on click")
-                        checked: settings ? settings.hideOnClick : false
-                        onToggled: { if (settings) settings.hideOnClick = checked }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Edge:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Screen edge:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         ComboBox {
                             model: [i18n("Bottom"), i18n("Left"), i18n("Top"), i18n("Right")]
                             currentIndex: settings ? settings.orientation : 0
                             onActivated: { if (settings) settings.orientation = currentIndex }
                         }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Edge margin (px):") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Edge margin:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
                             from: -300; to: 300; stepSize: 1
                             value: settings ? settings.edgeMargin : 0
                             onValueModified: { if (settings) settings.edgeMargin = value }
                         }
-                        Label { text: i18n("(negative = below other panels)") ; opacity: 0.6 }
+                        Label { text: i18n("px — negative = below other panels"); opacity: 0.45; Layout.fillWidth: true }
+                    }
+
+                    Label { text: i18n("Visibility"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    CheckBox {
+                        text: i18n("Auto-hide — show only when pointer touches screen edge")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.autoHide : false
+                        onToggled: { if (settings) settings.autoHide = checked }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Show delay:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 0; to: 2000; stepSize: 50
+                            value: settings ? settings.hideTimer : 125
+                            onValueModified: { if (settings) settings.hideTimer = value }
+                            enabled: settings ? settings.autoHide : false
+                        }
+                        Label { text: i18n("ms"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                     CheckBox {
-                        text: i18n("Show app menu as first item")
+                        text: i18n("Hide after clicking an item")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.hideOnClick : false
+                        onToggled: { if (settings) settings.hideOnClick = checked }
+                    }
+
+                    Label { text: i18n("Extras"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    CheckBox {
+                        text: i18n("Show application launcher as first dock item")
+                        Layout.leftMargin: 10
                         checked: settings ? settings.showKMenu : false
                         onToggled: { if (settings) settings.showKMenu = checked }
                     }
                 }
             }
 
-            // == Appearance ==
-            Flickable {
-                contentHeight: appCol.implicitHeight
-                ScrollBar.vertical: ScrollBar {}
+            // =====================================================
+            //  APPEARANCE
+            // =====================================================
+            ScrollView {
+                contentWidth: availableWidth
                 ColumnLayout {
-                    id: appCol
                     width: parent.width
+
+                    Label { text: i18n("Background"); font.bold: true; Layout.topMargin: 8; Layout.bottomMargin: 4 }
                     RowLayout {
-                        Label { text: i18n("Background color:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Rectangle {
+                            implicitWidth: 22; implicitHeight: 22; radius: 4
+                            color: bgColorField.text
+                            border.color: Qt.rgba(0, 0, 0, 0.15)
+                        }
                         TextField {
+                            id: bgColorField
+                            Layout.preferredWidth: 110
                             text: settings ? settings.backgroundColor : "#1e1e2e"
                             onEditingFinished: { if (settings) settings.backgroundColor = text }
                         }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Opacity (%):") }
-                        SpinBox {
-                            from: 0; to: 100; stepSize: 5
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Opacity:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: bgOpacSlider; from: 0; to: 100; stepSize: 1
                             value: settings ? settings.backgroundOpacity : 70
-                            onValueModified: { if (settings) settings.backgroundOpacity = value }
+                            onMoved: { if (settings) settings.backgroundOpacity = value }
+                            Layout.preferredWidth: 150
                         }
+                        SpinBox {
+                            from: 0; to: 100
+                            value: bgOpacSlider.value
+                            onValueModified: { bgOpacSlider.value = value; if (settings) settings.backgroundOpacity = value }
+                        }
+                        Label { text: "%"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Corner radius:") }
-                        SpinBox {
-                            from: 0; to: 60; stepSize: 1
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Corner radius:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: cornerSlider; from: 0; to: 60; stepSize: 1
                             value: settings ? settings.cornerRadius : 18
-                            onValueModified: { if (settings) settings.cornerRadius = value }
+                            onMoved: { if (settings) settings.cornerRadius = value }
+                            Layout.preferredWidth: 150
                         }
-                    }
-                    CheckBox {
-                        text: i18n("Blur behind dock")
-                        checked: settings ? settings.blurBackground : true
-                        onToggled: { if (settings) settings.blurBackground = checked }
-                    }
-                    CheckBox {
-                        text: i18n("Show borders")
-                        checked: settings ? settings.showBorders : false
-                        onToggled: { if (settings) settings.showBorders = checked }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Border color:") }
-                        TextField {
-                            text: settings ? settings.borderColor : "#b1c4de"
-                            onEditingFinished: { if (settings) settings.borderColor = text }
-                        }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Border width:") }
                         SpinBox {
-                            from: 0; to: 10; stepSize: 1
-                            value: settings ? settings.borderWidth * 2 : 1
-                            onValueModified: { if (settings) settings.borderWidth = value / 2 }
+                            from: 0; to: 60
+                            value: cornerSlider.value
+                            onValueModified: { cornerSlider.value = value; if (settings) settings.cornerRadius = value }
                         }
-                        Label { text: i18n("(0.5 px steps)") ; opacity: 0.6 }
-                    }
-                }
-            }
-
-            // == Sizes ==
-            Flickable {
-                contentHeight: szCol.implicitHeight
-                ScrollBar.vertical: ScrollBar {}
-                ColumnLayout {
-                    id: szCol
-                    width: parent.width
-                    RowLayout {
-                        Label { text: i18n("Small icon:") }
-                        SpinBox {
-                            from: 16; to: 128; stepSize: 4
-                            value: settings ? settings.smallIconSize : 48
-                            onValueModified: { if (settings) settings.smallIconSize = value }
-                        }
+                        Label { text: "px"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Big icon:") }
-                        SpinBox {
-                            from: 32; to: 256; stepSize: 4
-                            value: settings ? settings.bigIconSize : 96
-                            onValueModified: { if (settings) settings.bigIconSize = value }
-                        }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Zoomed icons:") }
-                        SpinBox {
-                            from: 4; to: 10; stepSize: 1
-                            value: settings ? settings.bigIconAmount : 5
-                            onValueModified: { if (settings) settings.bigIconAmount = value }
-                        }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Spacing:") }
-                        SpinBox {
-                            from: 0; to: 64; stepSize: 2
-                            value: settings ? settings.iconSpacing : 10
-                            onValueModified: { if (settings) settings.iconSpacing = value }
-                        }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Icon padding:") }
-                        SpinBox {
-                            from: 0; to: 32; stepSize: 1
-                            value: settings ? settings.iconPadding : 4
-                            onValueModified: { if (settings) settings.iconPadding = value }
-                        }
-                    }
-                    RowLayout {
-                        Label { text: i18n("Dock height:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Pill height:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
                             from: 32; to: 200; stepSize: 2
                             value: settings ? settings.dockHeight : 60
                             onValueModified: { if (settings) settings.dockHeight = value }
                         }
+                        Label { text: "px"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+                    CheckBox {
+                        text: i18n("Blur behind the dock (requires compositor)")
+                        Layout.leftMargin: 10; Layout.topMargin: 8
+                        checked: settings ? settings.blurBackground : true
+                        onToggled: { if (settings) settings.blurBackground = checked }
+                    }
+
+                    Label { text: i18n("Border"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    CheckBox {
+                        text: i18n("Show border")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.showBorders : false
+                        onToggled: { if (settings) settings.showBorders = checked }
                     }
                     RowLayout {
-                        Label { text: i18n("Zoom speed (ms):") }
-                        SpinBox {
-                            from: 50; to: 1000; stepSize: 50
-                            value: settings ? settings.zoomSpeed : 200
-                            onValueModified: { if (settings) settings.zoomSpeed = value }
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: settings ? settings.showBorders : false
+                        Label { text: i18n("Border color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Rectangle {
+                            implicitWidth: 22; implicitHeight: 22; radius: 4
+                            color: borderColorField.text
+                            border.color: Qt.rgba(0, 0, 0, 0.15)
                         }
+                        TextField {
+                            id: borderColorField
+                            Layout.preferredWidth: 110
+                            text: settings ? settings.borderColor : "#b1c4de"
+                            onEditingFinished: { if (settings) settings.borderColor = text }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: settings ? settings.showBorders : false
+                        Label { text: i18n("Border width:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 0; to: 20; stepSize: 1
+                            value: settings ? Math.round(settings.borderWidth * 2) : 1
+                            onValueModified: { if (settings) settings.borderWidth = value / 2 }
+                        }
+                        Label { text: i18n("× 0.5 px"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                 }
             }
 
-            // == Tasks ==
-            Flickable {
-                contentHeight: tskCol.implicitHeight
-                ScrollBar.vertical: ScrollBar {}
+            // =====================================================
+            //  ICONS
+            // =====================================================
+            ScrollView {
+                contentWidth: availableWidth
                 ColumnLayout {
-                    id: tskCol
                     width: parent.width
+
+                    Label { text: i18n("Sizes"); font.bold: true; Layout.topMargin: 8; Layout.bottomMargin: 4 }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Resting size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 16; to: 128; stepSize: 4
+                            value: settings ? settings.smallIconSize : 48
+                            onValueModified: { if (settings) settings.smallIconSize = value }
+                        }
+                        Label { text: "px"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Zoomed size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 32; to: 256; stepSize: 4
+                            value: settings ? settings.bigIconSize : 96
+                            onValueModified: { if (settings) settings.bigIconSize = value }
+                        }
+                        Label { text: "px"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Icon padding:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 0; to: 32; stepSize: 1
+                            value: settings ? settings.iconPadding : 4
+                            onValueModified: { if (settings) settings.iconPadding = value }
+                        }
+                        Label { text: i18n("px — inside margin"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Spacing:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 0; to: 64; stepSize: 2
+                            value: settings ? settings.iconSpacing : 10
+                            onValueModified: { if (settings) settings.iconSpacing = value }
+                        }
+                        Label { text: i18n("px — gap between icons"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    Label { text: i18n("Parabolic Zoom"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Zoom range:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: zoomRangeSlider; from: 4; to: 10; stepSize: 1
+                            value: settings ? settings.bigIconAmount : 5
+                            onMoved: { if (settings) settings.bigIconAmount = value }
+                            Layout.preferredWidth: 150
+                        }
+                        SpinBox {
+                            from: 4; to: 10
+                            value: zoomRangeSlider.value
+                            onValueModified: { zoomRangeSlider.value = value; if (settings) settings.bigIconAmount = value }
+                        }
+                        Label { text: i18n("neighbours"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Animation speed:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: zoomSpeedSlider; from: 50; to: 1000; stepSize: 50
+                            value: settings ? settings.zoomSpeed : 200
+                            onMoved: { if (settings) settings.zoomSpeed = value }
+                            Layout.preferredWidth: 150
+                        }
+                        SpinBox {
+                            from: 50; to: 1000; stepSize: 50
+                            value: zoomSpeedSlider.value
+                            onValueModified: { zoomSpeedSlider.value = value; if (settings) settings.zoomSpeed = value }
+                        }
+                        Label { text: "ms"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
+                }
+            }
+
+            // =====================================================
+            //  TASKS
+            // =====================================================
+            ScrollView {
+                contentWidth: availableWidth
+                ColumnLayout {
+                    width: parent.width
+
+                    Label { text: i18n("Window List"); font.bold: true; Layout.topMargin: 8; Layout.bottomMargin: 4 }
                     CheckBox {
-                        text: i18n("Show running windows")
+                        text: i18n("Show running windows in the dock")
+                        Layout.leftMargin: 10
                         checked: settings ? settings.showTaskbar : true
                         onToggled: { if (settings) settings.showTaskbar = checked }
                     }
                     CheckBox {
-                        text: i18n("Only minimized")
+                        text: i18n("Only show minimized windows")
+                        Layout.leftMargin: 10
                         checked: settings ? settings.minimizedOnly : false
                         onToggled: { if (settings) settings.minimizedOnly = checked }
                     }
                     CheckBox {
-                        text: i18n("Current desktop only")
+                        text: i18n("Only show windows from current virtual desktop")
+                        Layout.leftMargin: 10
                         checked: settings ? settings.currentDesktopOnly : false
                         onToggled: { if (settings) settings.currentDesktopOnly = checked }
                     }
+                    CheckBox {
+                        text: i18n("Highlight task when window notifies")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.showNotifications : true
+                        onToggled: { if (settings) settings.showNotifications = checked }
+                    }
+
+                    Label { text: i18n("Running Indicator"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
                     RowLayout {
-                        Label { text: i18n("Indicator size:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Dot size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
                             from: 0; to: 16; stepSize: 1
                             value: settings ? settings.taskIndicatorSize : 4
                             onValueModified: { if (settings) settings.taskIndicatorSize = value }
                         }
+                        Label { text: i18n("px — 0 = hidden"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Indicator color:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Dot color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Rectangle {
+                            implicitWidth: 22; implicitHeight: 22; radius: 4
+                            color: dotColorField.text
+                            border.color: Qt.rgba(0, 0, 0, 0.15)
+                        }
                         TextField {
+                            id: dotColorField
+                            Layout.preferredWidth: 110
                             text: settings ? settings.taskIndicatorColor : "#aaffffff"
                             onEditingFinished: { if (settings) settings.taskIndicatorColor = text }
                         }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Indicator opacity:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Dot opacity:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: dotOpacSlider; from: 0; to: 100; stepSize: 5
+                            value: settings ? Math.round(settings.taskIndicatorOpacity * 100) : 60
+                            onMoved: { if (settings) settings.taskIndicatorOpacity = value / 100 }
+                            Layout.preferredWidth: 150
+                        }
                         SpinBox {
                             from: 0; to: 100; stepSize: 5
-                            value: settings ? settings.taskIndicatorOpacity * 100 : 60
-                            onValueModified: { if (settings) settings.taskIndicatorOpacity = value / 100 }
+                            value: dotOpacSlider.value
+                            onValueModified: { dotOpacSlider.value = value; if (settings) settings.taskIndicatorOpacity = value / 100 }
                         }
+                        Label { text: "%"; opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                 }
             }
 
-            // == Tooltips ==
-            Flickable {
-                contentHeight: ttCol.implicitHeight
-                ScrollBar.vertical: ScrollBar {}
+            // =====================================================
+            //  TOOLTIPS
+            // =====================================================
+            ScrollView {
+                contentWidth: availableWidth
                 ColumnLayout {
-                    id: ttCol
                     width: parent.width
+
                     CheckBox {
-                        text: i18n("Show names on hover")
+                        text: i18n("Show icon name on hover")
+                        Layout.topMargin: 8; Layout.leftMargin: 10
                         checked: settings ? settings.showNames : true
                         onToggled: { if (settings) settings.showNames = checked }
                     }
+
+                    Label { text: i18n("Text"); font.bold: true; Layout.topMargin: 10; Layout.bottomMargin: 4 }
                     RowLayout {
-                        Label { text: i18n("Font family:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Font:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         TextField {
+                            Layout.preferredWidth: 160
                             text: settings ? settings.tooltipFont : "Sans Serif"
                             onEditingFinished: { if (settings) settings.tooltipFont = text }
                         }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Font size:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
                             from: 6; to: 72; stepSize: 1
                             value: settings ? settings.tooltipSize : 12
                             onValueModified: { if (settings) settings.tooltipSize = value }
                         }
+                        Label { text: i18n("px — font pixel size"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Text color:") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Text color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Rectangle {
+                            implicitWidth: 22; implicitHeight: 22; radius: 4
+                            color: ttColorField.text
+                            border.color: Qt.rgba(0, 0, 0, 0.15)
+                        }
                         TextField {
+                            id: ttColorField
+                            Layout.preferredWidth: 110
                             text: settings ? settings.tooltipColor : "#f1f1f1"
                             onEditingFinished: { if (settings) settings.tooltipColor = text }
                         }
-                    }
-                    CheckBox {
-                        text: i18n("Bold")
-                        checked: settings ? settings.tooltipBold : false
-                        onToggled: { if (settings) settings.tooltipBold = checked }
-                    }
-                    CheckBox {
-                        text: i18n("Italic")
-                        checked: settings ? settings.tooltipItalic : false
-                        onToggled: { if (settings) settings.tooltipItalic = checked }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Delay (ms):") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Shadow color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Rectangle {
+                            implicitWidth: 22; implicitHeight: 22; radius: 4
+                            color: ttShadowField.text
+                            border.color: Qt.rgba(0, 0, 0, 0.15)
+                        }
+                        TextField {
+                            id: ttShadowField
+                            Layout.preferredWidth: 110
+                            text: settings ? settings.tooltipShadowColor : "#000000"
+                            onEditingFinished: { if (settings) settings.tooltipShadowColor = text }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.leftMargin: 10; spacing: 20; Layout.topMargin: 2
+                        CheckBox {
+                            text: i18n("Bold")
+                            checked: settings ? settings.tooltipBold : false
+                            onToggled: { if (settings) settings.tooltipBold = checked }
+                        }
+                        CheckBox {
+                            text: i18n("Italic")
+                            checked: settings ? settings.tooltipItalic : false
+                            onToggled: { if (settings) settings.tooltipItalic = checked }
+                        }
+                    }
+
+                    Label { text: i18n("Timing"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Show after:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
                             from: 0; to: 5000; stepSize: 50
                             value: settings ? settings.tooltipDelay : 500
                             onValueModified: { if (settings) settings.tooltipDelay = value }
                         }
+                        Label { text: i18n("ms"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                     RowLayout {
-                        Label { text: i18n("Timeout (ms):") }
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Hide after:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
                             from: 0; to: 10000; stepSize: 100
                             value: settings ? settings.tooltipTimeout : 2000
                             onValueModified: { if (settings) settings.tooltipTimeout = value }
                         }
+                        Label { text: i18n("ms — 0 = never"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
                 }
             }
         }
 
+        // ── Separator ───────────────────────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            implicitHeight: 1
+            color: sysPalette.mid
+        }
+
+        // ── Footer ──────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
+            Layout.topMargin: 6
             Item { Layout.fillWidth: true }
+            Button {
+                text: i18n("Reset")
+                onClicked: {
+                    if (settings) settings.load()
+                    if (kooldock) kooldock.reload()
+                }
+            }
             Button {
                 text: i18n("Apply")
                 onClicked: {
