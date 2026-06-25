@@ -136,7 +136,7 @@ Item {
     // frozen — no auto-hide — for the entire lifetime of the menu, unlike
     // the dragActive heartbeat which expired after 500ms and broke the
     // freeze while the menu was still open.
-    readonly property bool frozen: contextMenu.visible || dockMenu.visible
+    readonly property bool frozen: contextMenu.visible || dockMenu.visible || trashMenu.visible
 
     function showMenu(item, pt) {
         contextMenuIndex = item.modelIndex
@@ -525,7 +525,6 @@ Item {
             }
 
             onContextMenuRequested: pt => {
-                if (model.isAppMenu) return
                 // pt arrives in scene (root window) coordinates; the menus
                 // are children of `bar`, and Menu.popup() positions relative
                 // to its parent's coordinate system. Map scene -> bar-local,
@@ -533,6 +532,13 @@ Item {
                 // corner) now that the surface is full-screen and `bar` sits
                 // at the screen edge rather than at the scene origin.
                 const p = bar.mapFromItem(null, pt.x, pt.y)
+                if (model.isAppMenu) {
+                    // The application-launcher icon has no per-item actions;
+                    // right-clicking it opens the dock-wide menu (Edit
+                    // Preferences / Reload / Quit), same as the background.
+                    dockMenu.popup(p)
+                    return
+                }
                 if (model.isTrash) {
                     bar.showTrashMenu(p)
                     return
