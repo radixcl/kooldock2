@@ -329,8 +329,12 @@ Item {
         }
 
         // Sizes from the field at fixed rest centres; centres from u_i plus
-        // the extra width to the left (the integral) plus half the icon's
-        // own growth, so the biggest icon lands under the cursor.
+        // the extra width to the left. leftExtra integrates the bump up to
+        // the icon's own centre, so by the midpoint rule it already includes
+        // half of this icon's own growth — adding e/2 on top would double-
+        // count it, pushing icons right by an amount that grows on the
+        // ascending side of the peak and shrinks on the descending side,
+        // which crowded the right-hand icons into a visible dip.
         const sizes = []
         const centers = []
         for (let i = 0; i < N; i++) {
@@ -338,7 +342,7 @@ Item {
             const e = containsMouse ? bumpAt(u, c) : 0
             const leftExtra = containsMouse ? bumpIntegral(u, c) / iDist : 0
             sizes[i] = smallSize + e
-            centers[i] = u + leftExtra + e / 2
+            centers[i] = u + leftExtra
         }
 
         // Re-pin the row flush at `spacing` from the pill's left edge so it
