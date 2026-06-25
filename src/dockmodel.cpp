@@ -101,7 +101,6 @@ void DockModel::activateWindow(quint64 windowId)
         if (nextId && nextId != windowId) {
             if (m_debug) qDebug() << "  activateWindow: cycling from" << windowId << "to" << nextId << "(grouped, count=" << item->windowCount() << ")";
             item->setPrimaryWindowId(nextId);
-            m_lastActivatedWindow = nextId;
             m_tasks->requestActivate(nextId);
             return;
         }
@@ -109,21 +108,21 @@ void DockModel::activateWindow(quint64 windowId)
 
     const WindowTasks::TaskData data = m_tasks->taskData(windowId);
 
-    // Single window: track which window we activated. If the same window
-    // is clicked again and it's not minimized, minimize it. If it's already
-    // minimized, activate it. The compositor doesn't report activeWindow
-    // to panel clients, so we can't rely on m_tasks->activeWindow().
-    // While "Show Desktop" is active, always activate instead: nothing is
-    // really "shown" right now, so toggling to minimize would do nothing
-    // visible and leave the dock looking unresponsive.
-    if (windowId == m_lastActivatedWindow && !data.minimized && !KWindowSystem::showingDesktop()) {
+    // Plasma-taskbar behavior: clicking the currently-focused, non-minimized
+    // window minimizes it; clicking any other window (or a minimized one)
+    // raises it. m_activeWindow follows the compositor's real focus
+    // (PlasmaWindowManagement::activeWindowChanged), so this stays correct
+    // even after the focus moved elsewhere via Alt+Tab -- using the
+    // last-activated-from-the-dock window here instead would wrongly minimize
+    // a window that is no longer in front. While "Show Desktop" is active,
+    // always activate: nothing is really shown, so minimizing would do
+    // nothing visible and leave the dock looking unresponsive.
+    if (windowId == m_activeWindow && !data.minimized && !KWindowSystem::showingDesktop()) {
         if (m_debug) qDebug() << "  activateWindow: minimizing" << windowId;
         m_tasks->requestMinimize(windowId);
-        m_lastActivatedWindow = 0;
     } else {
         if (m_debug) qDebug() << "  activateWindow: activating" << windowId << (data.minimized ? "(was minimized)" : "");
         m_tasks->requestActivate(windowId);
-        m_lastActivatedWindow = windowId;
     }
 }
 
@@ -137,12 +136,10 @@ void DockModel::activateSpecificWindow(quint64 windowId)
     }
 
     const WindowTasks::TaskData data = m_tasks->taskData(windowId);
-    if (windowId == m_lastActivatedWindow && !data.minimized && !KWindowSystem::showingDesktop()) {
+    if (windowId == m_activeWindow && !data.minimized && !KWindowSystem::showingDesktop()) {
         m_tasks->requestMinimize(windowId);
-        m_lastActivatedWindow = 0;
     } else {
         m_tasks->requestActivate(windowId);
-        m_lastActivatedWindow = windowId;
     }
 }
 

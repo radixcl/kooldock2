@@ -89,7 +89,6 @@ private:
     UnityLauncherWatcher *m_launcherWatcher;
     WindowTasks *m_tasks = nullptr;
     quint64 m_activeWindow = 0;
-    quint64 m_lastActivatedWindow = 0;
     bool m_suppressReload = false;
     bool m_loading = false;
     bool m_debug = false;
