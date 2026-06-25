@@ -945,7 +945,14 @@ void KoolDock::showPreferences()
     dialog->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     dialog->setFlag(Qt::Dialog);
     dialog->setFlag(Qt::WindowStaysOnTopHint);
-    dialog->setResizeMode(QQuickView::SizeViewToRootObject);
+    // SizeRootObjectToView: the window size drives the root item's
+    // width/height, so QML layouts that fill the root adapt when the
+    // user resizes the dialog.  SizeViewToRootObject (the opposite
+    // mode) would let the content dictate the window size, ignoring
+    // manual resizes.
+    dialog->setResizeMode(QQuickView::SizeRootObjectToView);
+    dialog->setMinimumSize(QSize(480, 360));
+    dialog->resize(600, 520);
     dialog->setTitle(i18n("KoolDock Preferences"));
     dialog->rootContext()->setContextObject(new KLocalizedContext(dialog));
     dialog->rootContext()->setContextProperty(QStringLiteral("settings"), KoolDockSettings::self());

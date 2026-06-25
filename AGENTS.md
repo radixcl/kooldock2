@@ -135,8 +135,10 @@ below were only caught this way.
    — set via `LayerShellQt::Window::setDesiredSize()`, computed in
    `maxDockWidth()`/`maxDockHeight()` — drives QML's `root.width/height`.
    QML's own `implicitWidth`/`implicitHeight` are inert there. The
-   preferences dialog (`KoolDock::showPreferences()`) uses the opposite
-   mode, where QML's implicit size *does* drive the window. Don't assume a
+   preferences dialog (`KoolDock::showPreferences()`) uses the same mode
+   (`SizeRootObjectToView`) with an explicit `resize()` call for the
+   initial size, so QML layouts that fill the root adapt when the user
+   resizes the dialog. Don't assume a
    QML width/height property controls the window without checking which
    mode applies to that view.
 
