@@ -108,6 +108,25 @@ Item {
                         Label { text: i18n("ms"); opacity: 0.45 }
                         Item { Layout.fillWidth: true }
                     }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Show/hide speed:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: showHideSpeedSlider; from: 50; to: 1000; stepSize: 50
+                            value: settings ? settings.showHideSpeed : 200
+                            onMoved: { if (settings) settings.showHideSpeed = value }
+                            enabled: settings ? settings.autoHide : false
+                            Layout.preferredWidth: 150
+                        }
+                        SpinBox {
+                            from: 50; to: 1000; stepSize: 50
+                            value: showHideSpeedSlider.value
+                            onValueModified: { showHideSpeedSlider.value = value; if (settings) settings.showHideSpeed = value }
+                            enabled: settings ? settings.autoHide : false
+                        }
+                        Label { text: i18n("ms"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
                     CheckBox {
                         text: i18n("Hide after clicking an item")
                         Layout.leftMargin: 10
@@ -639,6 +658,13 @@ Item {
                     spacing: 6
 
                     Item { Layout.preferredHeight: 20 }
+                    Image {
+                        source: "image://kicon/kooldock2"
+                        sourceSize.width: 96; sourceSize.height: 96
+                        Layout.preferredWidth: 96; Layout.preferredHeight: 96
+                        Layout.alignment: Qt.AlignHCenter
+                        fillMode: Image.PreserveAspectFit
+                    }
                     Label {
                         text: i18n("KoolDock2")
                         font.pixelSize: 24; font.bold: true

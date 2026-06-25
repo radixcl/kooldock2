@@ -922,6 +922,11 @@ void KoolDock::showPreferences()
     m_view->setFlag(Qt::WindowTransparentForInput, true);
 
     auto *dialog = new QQuickView();
+    // The dialog has its own QML engine, so it needs its own "kicon"
+    // image provider — the one on m_view's engine isn't shared. Without
+    // this, image://kicon/... sources (e.g. the app logo on the About
+    // tab) silently fail to resolve and render nothing.
+    dialog->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     dialog->setFlag(Qt::Dialog);
     dialog->setFlag(Qt::WindowStaysOnTopHint);
     dialog->setResizeMode(QQuickView::SizeViewToRootObject);

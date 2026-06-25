@@ -17,6 +17,7 @@ Item {
     readonly property int zoomRange: settings ? settings.bigIconAmount : 5
     readonly property int spacing: settings ? settings.iconSpacing : 10
     readonly property int zoomDuration: settings ? settings.zoomSpeed : 200
+    readonly property int showHideDuration: settings ? settings.showHideSpeed : 200
     readonly property int count: kooldock && kooldock.model ? kooldock.model.count : 0
     readonly property real bgOpacity: settings ? settings.backgroundOpacity / 100 : 0.7
     readonly property color bgColor: settings ? settings.backgroundColor : "#1e1e2e"
@@ -171,8 +172,8 @@ Item {
             y: autoHide && !containsMouse
                ? (edge === Qt.TopEdge ? -bg.height : edge === Qt.BottomEdge ? bg.height : 0)
                : 0
-            Behavior on x { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on y { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on x { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
+            Behavior on y { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
             // Update the blur region every frame as the pill slides, so the
             // blur stays aligned with the visible pill and never shows a
             // static blurred rectangle before/after the animation.
@@ -182,8 +183,8 @@ Item {
 
         Behavior on width   { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
         Behavior on height  { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
-        Behavior on opacity { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-        Behavior on scale   { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        Behavior on opacity { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
+        Behavior on scale   { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
 
         // Keep the desktop blur region matched to the pill's actual current
         // bounds — including its rounded corners — so neither the side dead

@@ -24,6 +24,12 @@
       <min>0</min>
       <max>2000</max>
     </entry>
+    <entry name="showHideSpeed" type="Int">
+      <label>Duration of the dock show/hide slide animation, in milliseconds</label>
+      <default>200</default>
+      <min>50</min>
+      <max>1000</max>
+    </entry>
     <entry name="stayBelow" type="Bool">
       <label>Keep the dock below other windows when not in use</label>
       <default>false</default>
