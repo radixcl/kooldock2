@@ -851,8 +851,17 @@ void KoolDock::applyBlur()
     if (!m_view) return;
     m_blurDirty = false;
     if (KoolDockSettings::blurBackground()) {
+        // If QML hasn't pushed a blur region yet (m_blurLength == 0),
+        // skip — the fallback to m_view->width() would blur the full
+        // screen for a frame since the window is panel-sized.
+        if (m_blurLength <= 0) {
+            // Not initialized yet — retry so the blur eventually goes live.
+            if (!m_blurTimer.isActive())
+                m_blurTimer.start();
+            return;
+        }
         const qreal pos = m_blurPos;
-        const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
+        const qreal length = m_blurLength;
         const qreal shortOffset = m_blurShortOffset;
         const int bgHeight = KoolDockSettings::dockHeight();
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
@@ -902,7 +911,14 @@ void KoolDock::reconfigure()
         applyPanelShell();
     }
     applySpacer();
-    applyBlur();
+    // Don't call applyBlur() directly — a direct call races with QML
+    // property re-evaluation after applyPanelShell()'s window resize,
+    // so m_blurPos/m_blurLength may be stale or zero (producing a
+    // full-screen blur flash).  Arm the throttled timer instead; QML
+    // will push fresh values via updateBlurRegion before it fires.
+    m_blurDirty = true;
+    if (!m_blurTimer.isActive())
+        m_blurTimer.start();
     Q_EMIT screenEdgeChanged();
     Q_EMIT autoHideChanged();
     Q_EMIT themeNameChanged();
