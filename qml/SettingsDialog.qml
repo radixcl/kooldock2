@@ -544,7 +544,6 @@ Item {
                         FontDialog {
                             id: fontDialog
                             title: i18n("Select Tooltip Font")
-                            options: FontDialog.ScalableFonts | FontDialog.MonospacedFonts | FontDialog.ProportionalFonts
                             currentFont.family: settings ? settings.tooltipFont : "Sans Serif"
                             currentFont.pixelSize: settings ? settings.tooltipSize : 12
                             onAccepted: {
