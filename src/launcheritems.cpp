@@ -11,6 +11,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -44,6 +45,9 @@ QList<Item *> LauncherItems::load() const
 
     for (const QString &file : files) {
         const QString path = dir.absoluteFilePath(file);
+        // KConfig requires the executable bit on .desktop files outside
+        // system directories. Ensure existing files have it set.
+        QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
         KDesktopFile df(path);
         const QString name = df.readName();
         const QString icon = df.readIcon();
@@ -87,6 +91,7 @@ void LauncherItems::addLauncher(const QString &desktopFile)
         // fails (e.g. source not readable).
         return;
     }
+    QFile::setPermissions(dest, QFile::permissions(dest) | QFileDevice::ExeOwner);
     Q_EMIT changed();
 }
 
@@ -186,6 +191,7 @@ void LauncherItems::ensureDefaultLaunchers() const
         out << QStringLiteral("Type=Application\n");
         out << QStringLiteral("Terminal=false\n");
         file.close();
+        QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
     }
 
     QFile markerFile(marker);
