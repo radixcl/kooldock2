@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QQuickView>
+#include <QSize>
 #include <QTimer>
 
 #include <KSharedConfig>
@@ -19,7 +20,17 @@
 class WindowTasks;
 class KConfigDialog;
 
-namespace LayerShellQt { class Window; }
+namespace KWayland {
+namespace Client {
+class PlasmaShell;
+class PlasmaShellSurface;
+}
+}
+
+namespace LayerShellQt {
+class Window;
+}
+class QRasterWindow;
 
 class KoolDock : public QObject
 {
@@ -36,6 +47,7 @@ class KoolDock : public QObject
     Q_PROPERTY(QString version READ version CONSTANT)
     Q_PROPERTY(QStringList screenNames READ screenNames NOTIFY screenNamesChanged)
     Q_PROPERTY(QString screenName READ screenName WRITE setScreenName NOTIFY screenNameChanged)
+    Q_PROPERTY(bool autostart READ autostart WRITE setAutostart NOTIFY autostartChanged)
 
 public:
     explicit KoolDock(QObject *parent = nullptr, bool debugBounds = false);
@@ -57,11 +69,15 @@ public:
     QStringList screenNames() const;
     QString screenName() const;
     void setScreenName(const QString &name);
+    bool autostart() const;
+    void setAutostart(bool enable);
 
 public Q_SLOTS:
     Q_INVOKABLE void setContainsMouse(bool contains);
     Q_INVOKABLE void setDragActive(bool active);
     Q_INVOKABLE void setDragExpanded(bool expanded);
+    Q_INVOKABLE void setMinimizedGeometry(quint64 windowId, int x, int y, int w, int h);
+    Q_INVOKABLE void unsetMinimizedGeometry(quint64 windowId);
     // How far beyond the icon footprint the currently-visible in-scene
     // tooltip needs, along the dock's short axis — 0 when none is
     // showing. Grows the real window immediately (no animation to race
@@ -94,6 +110,7 @@ Q_SIGNALS:
     void themeNameChanged();
     void screenNamesChanged();
     void screenNameChanged();
+    void autostartChanged();
 
 private Q_SLOTS:
     void onScreenChanged(QScreen *screen);
@@ -102,7 +119,13 @@ private Q_SLOTS:
 
 private:
     void setupView();
-    void applyLayerShell();
+    void applyPanelShell();
+    // Creates/updates or hides the invisible layer-shell "spacer" surface
+    // that reserves screen space via its exclusive zone. Shown only when
+    // reserveSpace is on and auto-hide is off; the dock window itself
+    // (org_kde_plasma_shell) cannot reserve space, so this separate surface
+    // does it. Idempotent -- safe to call from reconfigure().
+    void applySpacer();
     void applyGeometry();
     void applyBlur();
     void applyInputMask(bool hidden);
@@ -114,7 +137,11 @@ private:
     int maxDockShortSize() const;
 
     QPointer<QQuickView> m_view;
-    LayerShellQt::Window *m_layer = nullptr;
+    KWayland::Client::PlasmaShell *m_plasmaShell = nullptr;
+    KWayland::Client::PlasmaShellSurface *m_panelSurface = nullptr;
+    QSize m_desiredPanelSize;
+    QPointer<QRasterWindow> m_spacerView;
+    LayerShellQt::Window *m_spacerLayer = nullptr;
     WindowTasks *m_tasks;
     DockModel *m_model;
     WindowActions *m_windowActions;

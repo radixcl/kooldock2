@@ -12,6 +12,7 @@ Item {
     property bool isTrash: false
     property bool isRunning: false
     property var windowId: 0
+    property int windowCount: 0
     property int badgeCount: 0
     property int modelIndex: -1
     property real itemSize: 48
@@ -25,6 +26,7 @@ Item {
     property int taskDotSize: 4
     property color taskDotColor: "#aaffffff"
     property real taskDotOpacity: 0.6
+    property bool showWindowCountBadge: true
     property int tooltipDelay: 500
     property int tooltipTimeout: 2000
     property int tooltipSize: 12
@@ -35,6 +37,8 @@ Item {
     property color tooltipShadowColor: "#000000"
     property bool trashIsEmpty: true
     property bool barFrozen: false
+    property var kooldock: null
+    property bool minimizeAnimation: true
 
     // Drag-and-drop state. When dragging, the item is lifted (scale +
     // shadow), follows the cursor, and the bar handles reordering or
@@ -43,6 +47,15 @@ Item {
     property bool dragActive: false
     property real dragOffsetX: 0
     property real dragOffsetY: 0
+    // Last known cursor position (scene/root coords) during a drag. Kept so
+    // the icon can be re-centred under the cursor not only when the pointer
+    // moves, but also when the bar itself shifts (its x/y track
+    // contentLength, which changes when the drag layout turns magnification
+    // off) or when this item's own slot (itemPos) / size (itemSize) change.
+    // Without that, the icon lags behind the cursor by however far the bar
+    // moved since the last pointer event — a constant offset to the side.
+    property real dragSceneX: 0
+    property real dragSceneY: 0
     property bool beingDestroyed: false
     // Set by DockBar during dragMoved to indicate the icon is in the
     // removal zone (far enough from the bar on either axis). Drives the
@@ -75,8 +88,8 @@ Item {
     x: (vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos) + dragOffsetX
     y: (vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))) + dragOffsetY
 
-    Behavior on width  { enabled: !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
-    Behavior on height { enabled: !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on width  { enabled: !barFrozen && !dragActive; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
+    Behavior on height { enabled: !barFrozen && !dragActive; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
     Behavior on x      { enabled: !dragActive && !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
     Behavior on y      { enabled: !dragActive && !barFrozen; NumberAnimation { duration: zoomDuration; easing.type: Easing.OutQuad } }
 
@@ -196,19 +209,47 @@ Item {
 
         onCentroidChanged: {
             if (dragHandler.active && item.dragActive) {
-                // Follow the cursor: offset from the item's rest position
-                // to where the drag centroid is, in parent coordinates.
                 const scenePos = dragHandler.centroid.scenePosition
-                const parentPos = item.mapToItem(parent, 0, 0)
-                const targetX = scenePos.x - parentPos.x - itemSize / 2
-                const targetY = scenePos.y - parentPos.y - itemSize / 2
-                item.dragOffsetX = targetX - (vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos)
-                item.dragOffsetY = targetY - (vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize)))
+                item.dragSceneX = scenePos.x
+                item.dragSceneY = scenePos.y
+                item.recenterDrag()
                 const longPos = vertical ? scenePos.y : scenePos.x
                 const crossPos = vertical ? scenePos.x : scenePos.y
                 item.dragMoved(longPos, crossPos)
             }
         }
+    }
+
+    // Pin the icon's centre to the last-known cursor position. Offset is the
+    // delta from the item's rest slot to where the cursor is, in the item's
+    // *parent* (the bar) coordinate system. scenePosition is in scene (root
+    // window) coords, so map it into parent coords first — mixing the two
+    // breaks once the surface is full-screen and the bar sits far from the
+    // scene origin. Recomputed whenever any input that affects the mapping
+    // changes (cursor, bar position, this item's slot or size), so the icon
+    // stays glued to the cursor even when the bar re-centres mid-drag.
+    function recenterDrag() {
+        if (!dragActive) return
+        const localPos = parent.mapFromItem(null, dragSceneX, dragSceneY)
+        const targetX = localPos.x - itemSize / 2
+        const targetY = localPos.y - itemSize / 2
+        const restX = vertical ? (edge === Qt.LeftEdge ? 0 : (parent.width - itemSize)) : itemPos
+        const restY = vertical ? itemPos : (edge === Qt.TopEdge ? 0 : (parent.height - itemSize))
+        item.dragOffsetX = targetX - restX
+        item.dragOffsetY = targetY - restY
+    }
+
+    onItemPosChanged: if (dragActive) recenterDrag()
+    onItemSizeChanged: if (dragActive) recenterDrag()
+
+    // The bar's x/y track contentLength (Main.qml centres it), which changes
+    // when the drag layout drops magnification — recentre so the dragged
+    // icon doesn't drift with the bar between pointer events.
+    Connections {
+        target: item.parent
+        enabled: item.dragActive
+        function onXChanged() { item.recenterDrag() }
+        function onYChanged() { item.recenterDrag() }
     }
 
     Image {
@@ -228,7 +269,24 @@ Item {
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
         width: taskDotSize; height: taskDotSize; radius: taskDotSize / 2
-        color: taskDotColor; visible: (isTask || isRunning) && !isAppMenu && !isTrash; opacity: taskDotOpacity
+        // Shown for single-window tasks, and also for grouped tasks when the
+        // numeric count badge is turned off — so a grouped icon never ends up
+        // with no running indicator at all.
+        color: taskDotColor; visible: (isTask || isRunning) && !isAppMenu && !isTrash && (windowCount <= 1 || !showWindowCountBadge); opacity: taskDotOpacity
+    }
+
+    // Window count badge for grouped windows (>1)
+    Text {
+        visible: showWindowCountBadge && windowCount > 1 && !isAppMenu && !isTrash
+        text: windowCount
+        font.pixelSize: Math.max(9, item.itemSize * 0.2)
+        font.weight: Font.Bold
+        color: taskDotColor
+        opacity: taskDotOpacity
+        x: vertical ? (edge === Qt.LeftEdge ? 2 : (parent.width - width - 2))
+                    : (parent.width - width) / 2
+        y: vertical ? (parent.height - height) / 2
+                    : (edge === Qt.TopEdge ? 2 : (parent.height - height - 2))
     }
 
     // Notification badge (unread count via the Unity LauncherEntry DBus
@@ -484,6 +542,48 @@ Item {
         ParallelAnimation {
             NumberAnimation { target: clickBounce; property: "xScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
             NumberAnimation { target: clickBounce; property: "yScale"; to: 1.0; duration: 380; easing.type: Easing.OutBack }
+        }
+    }
+
+    // Minimize animation target: tell KWin where this icon is so the
+    // window minimize animation can fly toward it. Update periodically
+    // while the item has a window (position changes with zoom).
+    // The geometry is computed from the base (untransformed) layout
+    // chain — bg.x/y + bar.x/y + item.x/y — so it always reflects the
+    // icon's shown position on screen, even when the dock is hidden and
+    // bg has scale/translate transforms applied (which mapToItem would
+    // include, making the minimize target drift off the icon's actual
+    // screen footprint).
+    //
+    // `windowId` only ever names the icon's current *primary* window
+    // (the one cycling/activation last selected) — KWin tracks the
+    // minimize target per-window, not per-icon, so the other windows
+    // grouped under this same icon never get a target unless we set one
+    // for each of them too. Without this, only the primary window's
+    // minimize animation flies to the dock; the rest fall back to KWin's
+    // default (no directed animation).
+    Timer {
+        id: geomTimer
+        interval: 150
+        repeat: true
+        running: minimizeAnimation && (isTask || isRunning) && windowId
+        onTriggered: {
+            if (!windowId || !kooldock) return
+            // `parent` in a Timer handler resolves to QObject::parent()
+            // (the DockItem itself), NOT the visual parent (the bar).
+            // Use explicit id chain: item -> bar -> bg -> root.
+            const theBar = item.parent
+            const theBg = theBar.parent
+            const ptX = theBg.x + theBar.x + x
+            const ptY = theBg.y + theBar.y + y
+            if (windowCount > 1 && kooldock.model) {
+                const wins = kooldock.model.windowListForRow(modelIndex)
+                for (let i = 0; i < wins.length; i++) {
+                    kooldock.setMinimizedGeometry(wins[i].windowId, ptX, ptY, width, height)
+                }
+            } else {
+                kooldock.setMinimizedGeometry(windowId, ptX, ptY, width, height)
+            }
         }
     }
 

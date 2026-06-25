@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
         KAboutLicense::GPL_V2,
         i18n("(c) 2003, 2006 KoolDock team; (c) 2025 KoolDock2 port"),
         QString(),
-        QStringLiteral("https://github.com/anomalyco/kooldock2"),
+        QStringLiteral("https://gitlab.com/radixcl/kooldock2"),
         QStringLiteral("kooldock2-devel@lists.kde.cl"));
     aboutData.addAuthor(i18n("Matias Fernandez"), i18n("Original author"), QStringLiteral("radix@kde.cl"));
     aboutData.addAuthor(i18n("Francisco Guidi"), i18n("Original author"), QStringLiteral("francisco@guidi.com"));
@@ -57,8 +57,8 @@ int main(int argc, char *argv[])
         i18n("Show configuration window on start"));
     QCommandLineOption killOption(QStringList() << QStringLiteral("k") << QStringLiteral("kill"),
         i18n("Kill all running kooldock2 instances"));
-    QCommandLineOption debugBoundsOption(QStringList() << QStringLiteral("d") << QStringLiteral("debug-bounds"),
-        i18n("Draw the dock window's real (otherwise invisible) bounds, for debugging hover/resize behavior"));
+    QCommandLineOption debugBoundsOption(QStringList() << QStringLiteral("d") << QStringLiteral("debug"),
+        i18n("Enable debug logging and draw the dock window's real (otherwise invisible) bounds"));
     parser.addOption(optionsOption);
     parser.addOption(killOption);
     parser.addOption(debugBoundsOption);

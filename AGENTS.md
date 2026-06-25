@@ -232,3 +232,26 @@ shipped and clipped the tops of fully-zoomed icons.
   `setMaximumSize` or `m_view->resize()` — see invariant #10.  This was
   done once (to fix a CI build on Ubuntu 25.04) and immediately
   reintroduced the buffer-stretch flicker that 56a215f had fixed.
+- Don't push commits without an explicit user request.
+
+## Context menu rules
+
+Right-click behaviour by item type and running state:
+
+| Item | Not running | Running |
+|---|---|---|
+| **Launcher** (pinned) | `dockMenu` — Edit Preferences, Reload Configuration, Quit | `contextMenu` — Desktop Actions, Minimize/Maximize/Close, Keep in Dock/Remove, etc. |
+| **Task** (standalone, no launcher) | N/A | `contextMenu` |
+| **Trash** | `trashMenu` — Open Trash, Empty Trash | N/A |
+| **AppMenu** (KDE launcher) | No menu | N/A |
+| **Empty bar area** | `dockMenu` | N/A |
+
+A launcher dynamically switches between `dockMenu` (not running) and
+`contextMenu` (running) based on `model.isRunning`. This is wired in
+`DockBar.qml`'s `onContextMenuRequested` handler — do not change the
+menu assignment without checking this invariant.
+
+Window grouping adds a submenu listing individual window titles when
+the right-clicked item has >1 window grouped (`bar.contextWindowList`).
+This list is fetched fresh from the model in `showMenu()` via
+`model.windowListForRow()`.

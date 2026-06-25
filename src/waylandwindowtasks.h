@@ -31,10 +31,9 @@ public:
     void requestActivate();
     void requestMinimize();
     void requestClose();
-    // Generic toggle for any single state bit (maximized, fullscreen,
-    // keep_above, keep_below, shaded, on_all_desktops, ...) — flips it
-    // relative to the window's last known state.
     void requestToggleState(uint32_t bit);
+    void setMinimizedGeometry(struct ::wl_surface *panel, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
+    void unsetMinimizedGeometry(struct ::wl_surface *panel);
 
 Q_SIGNALS:
     void infoChanged();
@@ -157,6 +156,7 @@ public:
     void requestMinimize(quint64 windowId);
     void requestClose(quint64 windowId);
     void requestToggleState(quint64 windowId, uint32_t bit);
+    PlasmaWindow *window(quint64 windowId) const;
 
 Q_SIGNALS:
     void windowAdded(quint64 windowId);

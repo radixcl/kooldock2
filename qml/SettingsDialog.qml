@@ -108,11 +108,38 @@ Item {
                         Label { text: i18n("ms"); opacity: 0.45 }
                         Item { Layout.fillWidth: true }
                     }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Show/hide speed:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        Slider {
+                            id: showHideSpeedSlider; from: 50; to: 1000; stepSize: 50
+                            value: settings ? settings.showHideSpeed : 200
+                            onMoved: { if (settings) settings.showHideSpeed = value }
+                            enabled: settings ? settings.autoHide : false
+                            Layout.preferredWidth: 150
+                        }
+                        SpinBox {
+                            from: 50; to: 1000; stepSize: 50
+                            value: showHideSpeedSlider.value
+                            onValueModified: { showHideSpeedSlider.value = value; if (settings) settings.showHideSpeed = value }
+                            enabled: settings ? settings.autoHide : false
+                        }
+                        Label { text: i18n("ms"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
                     CheckBox {
                         text: i18n("Hide after clicking an item")
                         Layout.leftMargin: 10
                         checked: settings ? settings.hideOnClick : false
                         onToggled: { if (settings) settings.hideOnClick = checked }
+                    }
+                    CheckBox {
+                        text: i18n("Reserve screen space — maximized windows won't cover the dock")
+                        Layout.leftMargin: 10
+                        // Reserving space is meaningless while auto-hiding.
+                        enabled: settings ? !settings.autoHide : true
+                        checked: settings ? settings.reserveSpace : false
+                        onToggled: { if (settings) settings.reserveSpace = checked }
                     }
 
                     Label { text: i18n("Extras"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
@@ -121,6 +148,12 @@ Item {
                         Layout.leftMargin: 10
                         checked: settings ? settings.showKMenu : false
                         onToggled: { if (settings) settings.showKMenu = checked }
+                    }
+                    CheckBox {
+                        text: i18n("Start automatically on login")
+                        Layout.leftMargin: 10
+                        checked: kooldock ? kooldock.autostart : false
+                        onToggled: { if (kooldock) kooldock.autostart = checked }
                     }
                 }
             }
@@ -397,8 +430,20 @@ Item {
                         checked: settings ? settings.showNotifications : true
                         onToggled: { if (settings) settings.showNotifications = checked }
                     }
+                    CheckBox {
+                        text: i18n("Animate windows toward the dock icon when minimizing")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.minimizeAnimation : true
+                        onToggled: { if (settings) settings.minimizeAnimation = checked }
+                    }
 
                     Label { text: i18n("Running Indicator"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    CheckBox {
+                        text: i18n("Show window count badge on grouped tasks")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.showWindowCountBadge : true
+                        onToggled: { if (settings) settings.showWindowCountBadge = checked }
+                    }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Dot size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
@@ -480,22 +525,25 @@ Item {
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Font:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
-                        TextField {
-                            Layout.preferredWidth: 160
-                            text: settings ? settings.tooltipFont : "Sans Serif"
-                            onEditingFinished: { if (settings) settings.tooltipFont = text }
+                        Button {
+                            id: fontButton
+                            text: (settings ? settings.tooltipFont : "Sans Serif") +
+                                  " " + (settings ? settings.tooltipSize : 12) + "px"
+                            onClicked: fontDialog.open()
                         }
-                        Item { Layout.fillWidth: true }
-                    }
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 6
-                        Label { text: i18n("Size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
-                        SpinBox {
-                            from: 6; to: 72; stepSize: 1
-                            value: settings ? settings.tooltipSize : 12
-                            onValueModified: { if (settings) settings.tooltipSize = value }
+                        FontDialog {
+                            id: fontDialog
+                            title: i18n("Select Tooltip Font")
+                            options: FontDialog.ScalableFonts | FontDialog.MonospacedFonts | FontDialog.ProportionalFonts
+                            currentFont.family: settings ? settings.tooltipFont : "Sans Serif"
+                            currentFont.pixelSize: settings ? settings.tooltipSize : 12
+                            onAccepted: {
+                                if (settings) {
+                                    settings.tooltipFont = selectedFont.family
+                                    settings.tooltipSize = selectedFont.pixelSize
+                                }
+                            }
                         }
-                        Label { text: i18n("px — font pixel size"); opacity: 0.45 }
                         Item { Layout.fillWidth: true }
                     }
                     RowLayout {
@@ -610,6 +658,13 @@ Item {
                     spacing: 6
 
                     Item { Layout.preferredHeight: 20 }
+                    Image {
+                        source: "image://kicon/kooldock2"
+                        sourceSize.width: 96; sourceSize.height: 96
+                        Layout.preferredWidth: 96; Layout.preferredHeight: 96
+                        Layout.alignment: Qt.AlignHCenter
+                        fillMode: Image.PreserveAspectFit
+                    }
                     Label {
                         text: i18n("KoolDock2")
                         font.pixelSize: 24; font.bold: true

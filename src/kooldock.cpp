@@ -10,19 +10,31 @@
 #include "windowactions.h"
 #include "windowtasks.h"
 
+#include <KWayland/Client/connection_thread.h>
+#include <KWayland/Client/plasmashell.h>
+#include <KWayland/Client/registry.h>
+#include <KWayland/Client/surface.h>
+
 #include <LayerShellQt/Window>
 
 #include <KConfigDialog>
 #include <KLocalizedContext>
 #include <KLocalizedString>
 #include <KWindowEffects>
+#include <KWindowSystem>
 #include <KIO/CopyJob>
 
+#include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDirIterator>
+#include <QEventLoop>
+#include <QFile>
 #include <QIcon>
+#include <QPainter>
 #include <QPainterPath>
 #include <QProcess>
+#include <QRasterWindow>
 #include <QQmlContext>
 #include <QQuickImageProvider>
 #include <QQuickItem>
@@ -31,6 +43,76 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <qnativeinterface.h>
+
+namespace {
+// The strut "spacer": a borderless, input-transparent window that commits a
+// fully transparent buffer. It only exists so that, decorated as a
+// layer-shell surface with an exclusive zone, KWin reserves screen space for
+// the dock. A buffer must actually be committed for the layer surface to map
+// and the exclusive zone to take effect, hence the painting (it just paints
+// nothing visible).
+class SpacerWindow : public QRasterWindow
+{
+public:
+    SpacerWindow()
+    {
+        setFlag(Qt::FramelessWindowHint);
+        setFlag(Qt::WindowDoesNotAcceptFocus);
+        setFlag(Qt::WindowTransparentForInput);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.fillRect(QRect(QPoint(0, 0), size()), Qt::transparent);
+    }
+};
+} // namespace
+
+static QString resolveFlatpakIcon(const QString &appId)
+{
+    static QHash<QString, QString> cache;
+
+    auto it = cache.constFind(appId);
+    if (it != cache.constEnd()) {
+        return it->isEmpty() ? QString() : *it;
+    }
+
+    QString name = appId;
+    if (name.endsWith(QLatin1String("-flatpak"), Qt::CaseInsensitive)) {
+        name = name.left(name.length() - 8);
+    }
+    if (name.isEmpty()) {
+        cache.insert(appId, QString());
+        return {};
+    }
+
+    const QStringList iconDirs = {
+        QDir::homePath() + QStringLiteral("/.local/share/flatpak/exports/share/icons/hicolor"),
+        QStringLiteral("/var/lib/flatpak/exports/share/icons/hicolor"),
+    };
+
+    for (const QString &iconDir : iconDirs) {
+        QDirIterator it(iconDir, QStringList() << QStringLiteral("*.png") << QStringLiteral("*.svg") << QStringLiteral("*.svgz"),
+                        QDir::Files, QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            it.next();
+            const QString iconName = it.fileInfo().completeBaseName();
+            if (iconName.compare(name, Qt::CaseInsensitive) == 0
+                || iconName.contains(name, Qt::CaseInsensitive)) {
+                cache.insert(appId, iconName);
+                return iconName;
+            }
+        }
+    }
+
+    cache.insert(appId, QString());
+    return {};
+}
+
 class IconImageProvider : public QQuickImageProvider
 {
 public:
@@ -38,6 +120,35 @@ public:
     QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) override
     {
         QIcon icon = QIcon::fromTheme(id);
+        if (icon.isNull()) {
+            const QString lower = id.toLower();
+            if (lower != id) {
+                icon = QIcon::fromTheme(lower);
+            }
+            if (icon.isNull()) {
+                const int flatpakDash = id.indexOf(QLatin1String("-flatpak"), 0, Qt::CaseInsensitive);
+                if (flatpakDash > 0) {
+                    const QString stripped = id.left(flatpakDash);
+                    icon = QIcon::fromTheme(stripped);
+                    if (icon.isNull()) {
+                        icon = QIcon::fromTheme(stripped.toLower());
+                    }
+                }
+            }
+            if (icon.isNull() && id.contains(QLatin1Char('.'))) {
+                const QString last = id.section(QLatin1Char('.'), -1);
+                if (!last.isEmpty()) {
+                    icon = QIcon::fromTheme(last);
+                    if (icon.isNull()) icon = QIcon::fromTheme(last.toLower());
+                }
+            }
+            if (icon.isNull()) {
+                const QString resolved = resolveFlatpakIcon(id);
+                if (!resolved.isEmpty()) {
+                    icon = QIcon::fromTheme(resolved);
+                }
+            }
+        }
         if (icon.isNull()) icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
         const QSize s = requestedSize.isValid() ? requestedSize : QSize(48, 48);
         QPixmap pix = icon.pixmap(s);
@@ -65,7 +176,7 @@ void KoolDock::create(QObject *parent, bool showPreferences, bool debugBounds)
 KoolDock::KoolDock(QObject *parent, bool debugBounds)
     : QObject(parent)
     , m_tasks(new WindowTasks(this))
-    , m_model(new DockModel(m_tasks, this))
+    , m_model(new DockModel(m_tasks, debugBounds, this))
     , m_windowActions(new WindowActions(m_tasks, this))
     , m_config(KSharedConfig::openConfig(QStringLiteral("kooldockrc")))
     , m_debugBounds(debugBounds)
@@ -80,7 +191,7 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
     connect(&m_hideTimer, &QTimer::timeout, this, &KoolDock::onHideTimer);
 
     m_shrinkTimer.setSingleShot(true);
-    connect(&m_shrinkTimer, &QTimer::timeout, this, &KoolDock::applyLayerShell);
+    connect(&m_shrinkTimer, &QTimer::timeout, this, &KoolDock::applyPanelShell);
 
     // Throttle blur region updates: QML pushes new geometry every frame
     // (60 fps) during the zoom animation, but every enableBlurBehind
@@ -110,11 +221,44 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
     connect(&m_trashCheckTimer, &QTimer::timeout, this, &KoolDock::updateTrashState);
     m_trashCheckTimer.start();
 
+    // Start window/task tracking FIRST.  The raw libwayland registry in
+    // WaylandWindowTasks::start() needs to bind org_kde_plasma_window_management
+    // before the KWayland::Client::Registry below creates its own registry
+    // (for org_kde_plasma_shell) on the same wl_display — two simultaneous
+    // dispatch mechanisms (KWayland's internal roundtrip vs raw
+    // wl_display_roundtrip) can race and cause KWin to omit the privileged
+    // protocol from the later registry, silently breaking task tracking.
     m_tasks->start();
+
+    // Now bind org_kde_plasma_shell so the dock can be decorated as a
+    // real panel (KWayland::Client::PlasmaShellSurface, Role::Panel) rather
+    // than a generic xdg_toplevel surface -- KWin only exempts the former
+    // from hiding everything during "Show Desktop". The binding itself is
+    // async (it completes on the next Wayland round-trip), so spin the
+    // event loop briefly here: setupView() below needs m_plasmaShell ready
+    // before the window is first shown, to avoid a frame of default
+    // xdg_toplevel placement before the panel position/role apply.
+    using namespace KWayland::Client;
+    if (auto *connection = ConnectionThread::fromApplication(this)) {
+        auto *registry = new Registry(this);
+        connect(registry, &Registry::plasmaShellAnnounced, this,
+                [this, registry](quint32 name, quint32 version) {
+                    m_plasmaShell = registry->createPlasmaShell(name, version, this);
+                });
+        registry->create(connection);
+        registry->setup();
+        for (int i = 0; i < 50 && !m_plasmaShell; ++i) {
+            QCoreApplication::processEvents(QEventLoop::WaitForMoreEvents, 20);
+        }
+    }
+    if (!m_plasmaShell) {
+        qWarning() << "KoolDock: org_kde_plasma_shell unavailable; the dock "
+                       "will be hidden by KWin's \"Show Desktop\"";
+    }
 
     setupView();
 
-    connect(m_model, &DockModel::countChanged, this, [this]() { applyLayerShell(); });
+    connect(m_model, &DockModel::countChanged, this, [this]() { applyPanelShell(); });
 
     connect(m_model, &DockModel::activateAppMenu, this, &KoolDock::showAppMenu);
     connect(m_model, &DockModel::activateTrash, this, &KoolDock::openTrash);
@@ -126,12 +270,12 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
     connect(qApp, &QGuiApplication::screenRemoved, this, [this](QScreen *s) {
         refreshScreens();
         // If the configured screen was the one that disappeared, clear the
-        // setting so the dock falls back to primary and re-apply the layer.
+        // setting so the dock falls back to primary and re-apply the panel.
         if (KoolDockSettings::screenName() == s->name()) {
             KoolDockSettings::setScreenName(QString());
             KoolDockSettings::self()->save();
             Q_EMIT screenNameChanged();
-            applyLayerShell();
+            applyPanelShell();
         }
     });
     reconfigure();
@@ -190,6 +334,21 @@ void KoolDock::setDragExpanded(bool expanded)
     m_dragExpanded = expanded;
     // Window is always full-screen; drag tracking works anywhere.
 }
+
+void KoolDock::setMinimizedGeometry(quint64 windowId, int x, int y, int w, int h)
+{
+    if (!m_tasks || !m_view) return;
+    if (!KoolDockSettings::minimizeAnimation()) return;
+    m_tasks->setMinimizedGeometry(windowId, m_view, x, y, w, h);
+}
+
+void KoolDock::unsetMinimizedGeometry(quint64 windowId)
+{
+    if (!m_tasks || !m_view) return;
+    if (!KoolDockSettings::minimizeAnimation()) return;
+    m_tasks->unsetMinimizedGeometry(windowId, m_view);
+}
+
 QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
 
@@ -212,6 +371,58 @@ void KoolDock::setScreenName(const QString &name)
     Q_EMIT screenNameChanged();
 }
 
+// Source of truth is the presence of the file itself (the freedesktop.org
+// autostart convention), not a kcfg entry — that way the checkbox always
+// reflects what will actually happen on next login, even if the file was
+// added/removed by something other than this dialog.
+static QString autostartDesktopFilePath()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+        + QStringLiteral("/autostart/org.kde.kooldock2.desktop");
+}
+
+bool KoolDock::autostart() const
+{
+    return QFile::exists(autostartDesktopFilePath());
+}
+
+void KoolDock::setAutostart(bool enable)
+{
+    const QString path = autostartDesktopFilePath();
+    if (enable == QFile::exists(path)) return;
+
+    if (!enable) {
+        QFile::remove(path);
+        Q_EMIT autostartChanged();
+        return;
+    }
+
+    QDir().mkpath(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)
+                  + QStringLiteral("/autostart"));
+
+    // Prefer copying the installed .desktop file (kept in sync with the
+    // installed Exec= path); fall back to a minimal one for unpackaged
+    // dev builds run straight out of build/bin.
+    const QString installed = QStandardPaths::locate(QStandardPaths::ApplicationsLocation,
+                                                       QStringLiteral("org.kde.kooldock2.desktop"));
+    if (!installed.isEmpty()) {
+        QFile::copy(installed, path);
+    } else {
+        QFile file(path);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            file.write(QStringLiteral(
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=KoolDock2\n"
+                "Exec=%1\n"
+                "Icon=kooldock2\n"
+                "X-KDE-Wayland-Interfaces=org_kde_plasma_window_management,org_kde_plasma_shell\n")
+                .arg(QCoreApplication::applicationFilePath()).toUtf8());
+        }
+    }
+    Q_EMIT autostartChanged();
+}
+
 void KoolDock::refreshScreens()
 {
     QStringList names;
@@ -231,6 +442,14 @@ void KoolDock::setupView()
     m_view->setFlag(Qt::WindowDoesNotAcceptFocus);
     m_view->setColor(Qt::transparent);
 
+    // Attach the PlasmaShellSurface (role + behavior) to the native window
+    // before any QML loads. QQuickView::setSource() below triggers the
+    // scene graph's first render/commit; the panel role needs to be
+    // requested before that commit for KWin to honor it, instead of
+    // treating the surface as a plain, compositor-placed toplevel.
+    m_view->create();
+    applyPanelShell();
+
     m_view->rootContext()->setContextObject(new KLocalizedContext(m_view));
     m_view->rootContext()->setContextProperty(QStringLiteral("settings"), KoolDockSettings::self());
 
@@ -243,7 +462,13 @@ void KoolDock::setupView()
 
     m_view->setResizeMode(QQuickView::SizeRootObjectToView);
 
-    applyLayerShell();
+    // Re-apply position/size now that the resize mode above is in effect.
+    // QQuickView's default SizeViewToRootObject mode (in force while
+    // setSource() just loaded the QML) can shrink the window to the
+    // content's implicit size; without this second call that smaller size
+    // would stick, leaving the full-screen-sized input mask in
+    // applyInputMask() pointing at the wrong on-screen region.
+    applyPanelShell();
     applyGeometry();
     // Skip blur on startup when auto-hiding: the window starts hidden
     // (a narrow trigger strip), so a blur region would show a blurred
@@ -254,99 +479,215 @@ void KoolDock::setupView()
     }
 
     m_view->show();
+    // KWin sends its own initial xdg_toplevel configure for a freshly
+    // mapped floating toplevel (sized as if for a normal decorated window),
+    // which can win over the size requested above and leave a gap at the
+    // anchored edge. Re-assert the exact full-screen size/position once
+    // that initial configure has been processed.
+    QTimer::singleShot(0, this, [this]() { applyPanelShell(); });
+    if (m_debugBounds) {
+        QTimer::singleShot(500, this, [this]() {
+            qDebug() << "applyPanelShell (settled, +500ms): actualViewSize=" << m_view->size()
+                     << "actualViewGeometry=" << m_view->geometry();
+        });
+    }
     if (!autoHide()) {
         QTimer::singleShot(100, this, [this]() { applyBlur(); });
     }
+    applySpacer();
 }
 
-// Resize strategy: setDesiredSize() tells the compositor the desired
-// surface size without forcing an immediate QWindow resize — QtWayland
-// only commits the new geometry together with a matching buffer after
-// acking the configure event, so no frame with a size-mismatched buffer
-// is ever presented (no visible stretch).  On older LayerShellQt
-// (< 6.6.4, e.g. Ubuntu 25.04) fall back to setMinimumSize/setMaximumSize;
-// the one-frame stretch may appear on those distros.
-void KoolDock::applyLayerShell()
+void KoolDock::applyPanelShell()
 {
     if (!m_view) {
         return;
     }
 
-    m_layer = LayerShellQt::Window::get(m_view);
-    if (!m_layer) {
-        return;
-    }
-
-    using L = LayerShellQt::Window;
-    L::Anchors anchors;
-    switch (screenEdge()) {
-    case Qt::BottomEdge: anchors = L::AnchorBottom; break;
-    case Qt::TopEdge:    anchors = L::AnchorTop; break;
-    case Qt::LeftEdge:   anchors = L::AnchorLeft; break;
-    case Qt::RightEdge:  anchors = L::AnchorRight; break;
-    }
-    m_layer->setAnchors(anchors);
-    m_layer->setLayer(L::LayerTop);
-    m_layer->setKeyboardInteractivity(L::KeyboardInteractivityOnDemand);
-    m_layer->setScope(QStringLiteral("kooldock2"));
-
-    // Screen selection — place the layer surface on the configured
-    // monitor, falling back to the primary screen if none is set or
-    // the configured name doesn't match any connected screen.
-    {
-        const QString target = KoolDockSettings::screenName();
-        QScreen *chosen = QGuiApplication::primaryScreen();
-        for (auto *s : QGuiApplication::screens()) {
-            if (s->name() == target) {
-                chosen = s;
-                break;
-            }
+    if (!m_panelSurface) {
+        if (!m_plasmaShell) {
+            return;
         }
-#ifdef LAYERSHELLQT_HAS_SET_SCREEN
-        m_layer->setScreen(chosen);
-#else
-        m_view->setScreen(chosen);
-#endif
+        // The PlasmaShellSurface decorates an already-created wl_surface
+        // (unlike layer-shell, which assigns the surface's role itself) —
+        // create() allocates the native window without mapping/showing it,
+        // so this can run before the first show() with no visible flicker.
+        m_view->create();
+        auto *surface = KWayland::Client::Surface::fromWindow(m_view);
+        if (!surface) {
+            qWarning() << "KoolDock: no wl_surface yet for the dock window; "
+                           "panel role/position not applied this time";
+            return;
+        }
+        m_panelSurface = m_plasmaShell->createSurface(surface, this);
+        using PS = KWayland::Client::PlasmaShellSurface;
+        m_panelSurface->setRole(PS::Role::Panel);
+        m_panelSurface->setPanelBehavior(PS::PanelBehavior::AlwaysVisible);
+        m_panelSurface->setSkipTaskbar(true);
+        m_panelSurface->setSkipSwitcher(true);
+
+        // KWin sends its own xdg_toplevel configure shortly after the
+        // window is first mapped, suggesting a size as if for a normal
+        // decorated floating window -- it arrives *after* the resize()
+        // calls below and wins, leaving a gap at the anchored edge despite
+        // setMinimumSize()==setMaximumSize(). Re-assert m_desiredPanelSize
+        // every time Qt applies one of these unsolicited resizes.
+        connect(m_view, &QWindow::widthChanged, this, [this](int) {
+            if (m_desiredPanelSize.isValid() && m_view->size() != m_desiredPanelSize) {
+                m_view->resize(m_desiredPanelSize);
+            }
+        });
+        connect(m_view, &QWindow::heightChanged, this, [this](int) {
+            if (m_desiredPanelSize.isValid() && m_view->size() != m_desiredPanelSize) {
+                m_view->resize(m_desiredPanelSize);
+            }
+        });
     }
+
+    // Screen selection — place the panel on the configured monitor,
+    // falling back to the primary screen if none is set or the configured
+    // name doesn't match any connected screen. Mirrors maxDockWidth()/
+    // maxDockHeight()'s lookup.
+    const QString target = KoolDockSettings::screenName();
+    QScreen *chosen = QGuiApplication::primaryScreen();
+    for (auto *s : QGuiApplication::screens()) {
+        if (s->name() == target) {
+            chosen = s;
+            break;
+        }
+    }
+    m_view->setScreen(chosen);
+
+    // Force the exact full-screen size: a plain xdg_toplevel has no
+    // equivalent to layer-shell's setDesiredSize() configure negotiation,
+    // and KWin's own initial-configure size suggestion for a new floating
+    // toplevel can otherwise win out over a plain resize(), leaving a gap
+    // at the anchored edge. min==max==resize pins it unconditionally.
+    const QSize size(maxDockWidth(), maxDockHeight());
+    m_desiredPanelSize = size;
+    m_view->setMinimumSize(size);
+    m_view->setMaximumSize(size);
+    m_view->resize(size);
 
     // Edge margin: a negative value pushes the dock past other panels
     // (e.g. the KDE taskbar) toward the screen edge, so the dock can sit
-    // below the taskbar instead of above it. Applied as a layer-shell
-    // margin on the anchored edge only.
+    // below the taskbar instead of above it. The window is always
+    // full-screen sized (the pill is positioned at the anchored edge by
+    // QML, the rest is transparent), so shifting the window's global
+    // origin away from the anchored edge by edgeMargin moves the pill the
+    // same way a layer-shell margin would.
     const int edgeMargin = KoolDockSettings::edgeMargin();
-    QMargins margins;
+    const QRect g = chosen ? chosen->geometry() : QRect(0, 0, 1920, 1080);
+    QPoint pos = g.topLeft();
     switch (screenEdge()) {
-    case Qt::BottomEdge: margins.setBottom(edgeMargin); break;
-    case Qt::TopEdge:    margins.setTop(edgeMargin); break;
-    case Qt::LeftEdge:   margins.setLeft(edgeMargin); break;
-    case Qt::RightEdge:  margins.setRight(edgeMargin); break;
+    case Qt::BottomEdge: pos.setY(g.top() - edgeMargin); break;
+    case Qt::TopEdge:    pos.setY(g.top() + edgeMargin); break;
+    case Qt::LeftEdge:   pos.setX(g.left() + edgeMargin); break;
+    case Qt::RightEdge:  pos.setX(g.left() - edgeMargin); break;
     }
-    m_layer->setMargins(margins);
+    m_panelSurface->setPosition(pos);
+    // Also set the Qt-level window position so that QWindow::position()
+    // and mapToGlobal() reflect the actual on-screen placement.  This is
+    // what setMinimizedGeometry() relies on to translate QML-local icon
+    // coordinates into the panel-relative coordinates that KWin's
+    // set_minimized_geometry protocol expects.
+    m_view->setPosition(pos);
 
-    const int bgHeight = KoolDockSettings::dockHeight();
-    const bool overlay = autoHide() || edgeMargin != 0;
-    // Window is always full-screen.  The pill is positioned at the
-    // anchored edge by QML bindings; rest is transparent.  Input is
-    // restricted to the pill area / trigger strip by applyInputMask().
-    QSize size(maxDockWidth(), maxDockHeight());
-#ifdef LAYERSHELLQT_HAS_SET_DESIRED_SIZE
-    m_layer->setDesiredSize(size);
-#else
-    m_view->setMinimumSize(size);
-    m_view->setMaximumSize(size);
-#endif
-    m_layer->setExclusiveZone(overlay ? 0 : bgHeight);
-    m_layer->setExclusiveEdge(static_cast<L::Anchor>(0));
-    if (!overlay) {
-        switch (screenEdge()) {
-        case Qt::BottomEdge: m_layer->setExclusiveEdge(L::AnchorBottom); break;
-        case Qt::TopEdge:    m_layer->setExclusiveEdge(L::AnchorTop); break;
-        case Qt::LeftEdge:   m_layer->setExclusiveEdge(L::AnchorLeft); break;
-        case Qt::RightEdge:  m_layer->setExclusiveEdge(L::AnchorRight); break;
-        }
-    }
+    if (m_debugBounds) qDebug() << "applyPanelShell: edge=" << screenEdge()
+        << "screen=" << (chosen ? chosen->name() : QStringLiteral("null"))
+        << "screenGeometry=" << g
+        << "requestedSize=" << size
+        << "requestedPosition=" << pos
+        << "edgeMargin=" << edgeMargin
+        << "actualViewSize=" << m_view->size()
+        << "actualViewGeometry=" << m_view->geometry()
+        << "devicePixelRatio=" << m_view->devicePixelRatio();
 
     applyInputMask(!m_containsMouse);
+}
+
+void KoolDock::applySpacer()
+{
+    // The dock window uses org_kde_plasma_shell (Role::Panel), which does not
+    // reserve screen space -- maximized windows draw all the way to the edge,
+    // behind the dock. When the user asks for panel-like behavior (and the
+    // dock isn't auto-hiding, where reserving space makes no sense), decorate
+    // a separate, invisible window with wlr-layer-shell and an exclusive zone,
+    // which KWin honors as a strut. The two protocols never touch the same
+    // surface, so the plasma-shell "stays visible during Show Desktop"
+    // behavior is unaffected.
+    const bool want = KoolDockSettings::reserveSpace() && !autoHide();
+    if (!want) {
+        if (m_spacerView) {
+            m_spacerView->hide(); // unmapping releases the reserved strut
+        }
+        return;
+    }
+
+    QScreen *chosen = QGuiApplication::primaryScreen();
+    const QString target = KoolDockSettings::screenName();
+    for (auto *s : QGuiApplication::screens()) {
+        if (s->name() == target) { chosen = s; break; }
+    }
+    if (!chosen) {
+        return;
+    }
+    const QRect g = chosen->geometry();
+
+    // Reserve only the pill's band: its height plus any positive edge gap.
+    // A negative edgeMargin tucks the pill past other panels toward the edge,
+    // so there's no extra gap to reserve in that case.
+    const int thickness = KoolDockSettings::dockHeight()
+        + qMax(0, KoolDockSettings::edgeMargin());
+
+    using LSW = LayerShellQt::Window;
+    LSW::Anchors anchors;
+    LSW::Anchor exclusiveEdge = LSW::AnchorNone;
+    QSize size;
+    switch (screenEdge()) {
+    case Qt::BottomEdge:
+        anchors = LSW::Anchors(LSW::AnchorBottom | LSW::AnchorLeft | LSW::AnchorRight);
+        exclusiveEdge = LSW::AnchorBottom;
+        size = QSize(g.width(), thickness);
+        break;
+    case Qt::TopEdge:
+        anchors = LSW::Anchors(LSW::AnchorTop | LSW::AnchorLeft | LSW::AnchorRight);
+        exclusiveEdge = LSW::AnchorTop;
+        size = QSize(g.width(), thickness);
+        break;
+    case Qt::LeftEdge:
+        anchors = LSW::Anchors(LSW::AnchorLeft | LSW::AnchorTop | LSW::AnchorBottom);
+        exclusiveEdge = LSW::AnchorLeft;
+        size = QSize(thickness, g.height());
+        break;
+    case Qt::RightEdge:
+        anchors = LSW::Anchors(LSW::AnchorRight | LSW::AnchorTop | LSW::AnchorBottom);
+        exclusiveEdge = LSW::AnchorRight;
+        size = QSize(thickness, g.height());
+        break;
+    }
+
+    if (!m_spacerView) {
+        auto *win = new SpacerWindow();
+        // Need an alpha channel so the committed buffer is actually
+        // transparent rather than opaque black.
+        QSurfaceFormat fmt = win->format();
+        fmt.setAlphaBufferSize(8);
+        win->setFormat(fmt);
+        // The layer-shell role must be attached before the platform window
+        // is created (i.e. before show()).
+        m_spacerLayer = LSW::get(win);
+        m_spacerLayer->setLayer(LSW::LayerTop);
+        m_spacerLayer->setScope(QStringLiteral("kooldock-spacer"));
+        m_spacerLayer->setKeyboardInteractivity(LSW::KeyboardInteractivityNone);
+        m_spacerView = win;
+    }
+
+    m_spacerView->setScreen(chosen);
+    m_spacerLayer->setAnchors(anchors);
+    m_spacerLayer->setExclusiveEdge(exclusiveEdge);
+    m_spacerLayer->setExclusiveZone(thickness);
+    m_spacerView->resize(size);
+    m_spacerView->show();
 }
 
 void KoolDock::applyGeometry()
@@ -457,13 +798,33 @@ void KoolDock::applyInputMask(bool hidden)
     const int bgHeight = KoolDockSettings::dockHeight();
 
     if (autoHide()) {
-        // Autohide: restrict to an 8 px trigger strip at the anchored edge.
+        // Autohide: restrict to an 8 px trigger strip at the anchored edge,
+        // sized to the pill's unzoomed (rest) length so the dock only wakes
+        // when the cursor is within the pill's horizontal/vertical footprint,
+        // not the full screen edge. Using the rest length (not maxDockLongSize
+        // which includes zoom expansion) matches the visible pill bounds
+        // exactly — DockBar.qml's contentLength at rest equals
+        // iconSpacing + count * (smallIconSize + iconSpacing).
+        const int smallIconSize = KoolDockSettings::smallIconSize();
+        const int iconSpacing = KoolDockSettings::iconSpacing();
+        const int count = m_model ? m_model->count() : 0;
+        const int restPillLen = count > 0
+            ? iconSpacing + count * (smallIconSize + iconSpacing)
+            : 64;
         QRect strip;
         switch (screenEdge()) {
-        case Qt::BottomEdge: strip = QRect(0, h - TRIGGER_HEIGHT, w, TRIGGER_HEIGHT); break;
-        case Qt::TopEdge:    strip = QRect(0, 0, w, TRIGGER_HEIGHT); break;
-        case Qt::LeftEdge:   strip = QRect(0, 0, TRIGGER_HEIGHT, h); break;
-        case Qt::RightEdge:  strip = QRect(w - TRIGGER_HEIGHT, 0, TRIGGER_HEIGHT, h); break;
+        case Qt::BottomEdge:
+            strip = QRect((w - restPillLen) / 2, h - TRIGGER_HEIGHT, restPillLen, TRIGGER_HEIGHT);
+            break;
+        case Qt::TopEdge:
+            strip = QRect((w - restPillLen) / 2, 0, restPillLen, TRIGGER_HEIGHT);
+            break;
+        case Qt::LeftEdge:
+            strip = QRect(0, (h - restPillLen) / 2, TRIGGER_HEIGHT, restPillLen);
+            break;
+        case Qt::RightEdge:
+            strip = QRect(w - TRIGGER_HEIGHT, (h - restPillLen) / 2, TRIGGER_HEIGHT, restPillLen);
+            break;
         }
         m_view->setMask(QRegion(strip));
     } else {
@@ -537,9 +898,10 @@ void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffs
 
 void KoolDock::reconfigure()
 {
-    if (m_layer) {
-        applyLayerShell();
+    if (m_panelSurface) {
+        applyPanelShell();
     }
+    applySpacer();
     applyBlur();
     Q_EMIT screenEdgeChanged();
     Q_EMIT autoHideChanged();
@@ -554,20 +916,31 @@ void KoolDock::reload()
 
 void KoolDock::showPreferences()
 {
+    // The dock is a full-screen panel surface sitting above normal
+    // windows. Make it transparent to input while the dialog is open
+    // so the user can interact with it. Restore when the dialog closes.
+    m_view->setFlag(Qt::WindowTransparentForInput, true);
+
     auto *dialog = new QQuickView();
+    // The dialog has its own QML engine, so it needs its own "kicon"
+    // image provider — the one on m_view's engine isn't shared. Without
+    // this, image://kicon/... sources (e.g. the app logo on the About
+    // tab) silently fail to resolve and render nothing.
+    dialog->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     dialog->setFlag(Qt::Dialog);
     dialog->setFlag(Qt::WindowStaysOnTopHint);
-    // Unlike the main dock view, this is a plain desktop window with no
-    // layer-shell surface dictating its size, so let it size itself to the
-    // QML content's implicit size instead of the other way around — with
-    // SizeRootObjectToView and no explicit resize(), the window opened at
-    // Qt's tiny platform-default size and the content never fit.
     dialog->setResizeMode(QQuickView::SizeViewToRootObject);
     dialog->setTitle(i18n("KoolDock Preferences"));
     dialog->rootContext()->setContextObject(new KLocalizedContext(dialog));
     dialog->rootContext()->setContextProperty(QStringLiteral("settings"), KoolDockSettings::self());
     dialog->rootContext()->setContextProperty(QStringLiteral("kooldock"), this);
     dialog->setSource(QUrl(QStringLiteral("qrc:/qml/SettingsDialog.qml")));
+
+    QObject::connect(dialog, &QWindow::visibleChanged, this, [this](bool visible) {
+        if (!visible) {
+            m_view->setFlag(Qt::WindowTransparentForInput, false);
+        }
+    });
     dialog->show();
 }
 
@@ -611,7 +984,7 @@ void KoolDock::setContainsMouse(bool contains)
         return;
     }
     m_containsMouse = contains;
-    if (m_layer && KoolDockSettings::autoHide()) {
+    if (m_panelSurface && KoolDockSettings::autoHide()) {
         if (contains) {
             m_hideTimer.stop();
             applyInputMask(false);
@@ -622,7 +995,7 @@ void KoolDock::setContainsMouse(bool contains)
     // Non-autohide: toggle the input mask between full (hovering) and
     // pill-only (not hovering) so clicks pass through the transparent
     // overflow to windows behind the full-screen dock.
-    if (m_layer && !KoolDockSettings::autoHide()) {
+    if (m_panelSurface && !KoolDockSettings::autoHide()) {
         applyInputMask(!contains);
     }
     Q_EMIT containsMouseChanged();
@@ -643,7 +1016,7 @@ void KoolDock::setPointerDistanceFromEdge(qreal distance)
 
 void KoolDock::onHideTimer()
 {
-    if (!m_layer || !KoolDockSettings::autoHide() || m_containsMouse) {
+    if (!m_panelSurface || !KoolDockSettings::autoHide() || m_containsMouse) {
         return;
     }
     // Restrict the pointer input region to the trigger strip so normal

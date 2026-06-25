@@ -46,18 +46,6 @@ target_include_directories(kooldock2 PRIVATE
 # Generate version header from CMake project() call in top-level CMakeLists.txt
 configure_file(version.h.in version.h @ONLY)
 
-# LayerShellQt >= 6.6.4 ships setDesiredSize().  Older distros (Ubuntu
-# 25.04) don't have it; the QWindow fallback reintroduces the one-frame
-# buffer-stretch flicker on resize, so prefer setDesiredSize when present.
-file(STRINGS "/usr/include/LayerShellQt/window.h" _ls_api REGEX "setDesiredSize")
-if(_ls_api)
-    target_compile_definitions(kooldock2 PRIVATE LAYERSHELLQT_HAS_SET_DESIRED_SIZE=1)
-endif()
-file(STRINGS "/usr/include/LayerShellQt/window.h" _ls_screen REGEX "void setScreen")
-if(_ls_screen)
-    target_compile_definitions(kooldock2 PRIVATE LAYERSHELLQT_HAS_SET_SCREEN=1)
-endif()
-
 target_link_libraries(kooldock2 PRIVATE
     Qt6::Core
     Qt6::DBus
@@ -80,6 +68,7 @@ target_link_libraries(kooldock2 PRIVATE
     KF6::XmlGui
     KF6::I18n
     KF6::ColorScheme
+    Plasma::KWaylandClient
     LayerShellQtInterface
 )
 

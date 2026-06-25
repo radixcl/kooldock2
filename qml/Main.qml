@@ -17,6 +17,7 @@ Item {
     readonly property int zoomRange: settings ? settings.bigIconAmount : 5
     readonly property int spacing: settings ? settings.iconSpacing : 10
     readonly property int zoomDuration: settings ? settings.zoomSpeed : 200
+    readonly property int showHideDuration: settings ? settings.showHideSpeed : 200
     readonly property int count: kooldock && kooldock.model ? kooldock.model.count : 0
     readonly property real bgOpacity: settings ? settings.backgroundOpacity / 100 : 0.7
     readonly property color bgColor: settings ? settings.backgroundColor : "#1e1e2e"
@@ -29,6 +30,7 @@ Item {
     readonly property int taskDotSize: settings ? settings.taskIndicatorSize : 4
     readonly property color taskDotColor: settings ? settings.taskIndicatorColor : "#aaffffff"
     readonly property real taskDotOpacity: settings ? settings.taskIndicatorOpacity : 0.6
+    readonly property bool showWindowCountBadge: settings ? settings.showWindowCountBadge : true
     readonly property int tooltipDelay: settings ? settings.tooltipDelay : 500
     readonly property int tooltipTimeout: settings ? settings.tooltipTimeout : 2000
     readonly property int tooltipSize: settings ? settings.tooltipSize : 12
@@ -37,6 +39,7 @@ Item {
     readonly property string tooltipFont: settings ? settings.tooltipFont : "Sans Serif"
     readonly property color tooltipColor: settings ? settings.tooltipColor : "#f1f1f1"
     readonly property color tooltipShadowColor: settings ? settings.tooltipShadowColor : "#000000"
+    readonly property bool minimizeAnimation: settings ? settings.minimizeAnimation : true
 
     // Dock geometry along its long and short axes. The long axis is the one
     // icons lay out on (horizontal for Top/BottomEdge, vertical for
@@ -169,8 +172,8 @@ Item {
             y: autoHide && !containsMouse
                ? (edge === Qt.TopEdge ? -bg.height : edge === Qt.BottomEdge ? bg.height : 0)
                : 0
-            Behavior on x { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-            Behavior on y { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on x { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
+            Behavior on y { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
             // Update the blur region every frame as the pill slides, so the
             // blur stays aligned with the visible pill and never shows a
             // static blurred rectangle before/after the animation.
@@ -180,8 +183,8 @@ Item {
 
         Behavior on width   { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
         Behavior on height  { enabled: !dockBar.frozen; NumberAnimation { duration: root.zoomDuration; easing.type: Easing.OutQuad } }
-        Behavior on opacity { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-        Behavior on scale   { enabled: root.ready; NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+        Behavior on opacity { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
+        Behavior on scale   { enabled: root.ready; NumberAnimation { duration: root.showHideDuration; easing.type: Easing.OutCubic } }
 
         // Keep the desktop blur region matched to the pill's actual current
         // bounds — including its rounded corners — so neither the side dead
@@ -238,6 +241,7 @@ Item {
             taskDotSize: root.taskDotSize
             taskDotColor: root.taskDotColor
             taskDotOpacity: root.taskDotOpacity
+            showWindowCountBadge: root.showWindowCountBadge
             tooltipDelay: root.tooltipDelay
             tooltipTimeout: root.tooltipTimeout
             tooltipSize: root.tooltipSize
@@ -246,6 +250,7 @@ Item {
             tooltipFont: root.tooltipFont
             tooltipColor: root.tooltipColor
             tooltipShadowColor: root.tooltipShadowColor
+            minimizeAnimation: root.minimizeAnimation
             trashIsEmpty: kooldock ? kooldock.trashIsEmpty : true
             onEmptyTrash: { if (kooldock) kooldock.emptyTrash() }
             // Stable inputs from Main.qml: the window's extent along the dock's

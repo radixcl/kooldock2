@@ -14,6 +14,8 @@
 #include <QStandardPaths>
 #include <QTextStream>
 
+#include <algorithm>
+
 LauncherItems::LauncherItems(QObject *parent)
     : QObject(parent)
 {
@@ -34,9 +36,10 @@ QList<Item *> LauncherItems::load() const
         return result;
     }
 
-    const QStringList files = dir.entryList({QStringLiteral("*.desktop")}, QDir::Files, QDir::Name);
+    QStringList files = sortedFiles();
     if (files.isEmpty()) {
         ensureDefaultLaunchers();
+        files = sortedFiles();
     }
 
     for (const QString &file : files) {
@@ -110,7 +113,18 @@ void LauncherItems::moveLauncher(int from, int to)
 QStringList LauncherItems::sortedFiles() const
 {
     QDir dir(m_menuDir);
-    return dir.entryList({QStringLiteral("*.desktop")}, QDir::Files, QDir::Name);
+    QStringList files = dir.entryList({QStringLiteral("*.desktop")}, QDir::Files);
+    // Sort by the integer value of the numeric prefix, not lexically:
+    // QDir::Name would order "100-x" before "20-x" (string compare),
+    // scrambling the saved order once any prefix reaches three digits
+    // (i.e. the 11th launcher onward, since renumber() steps by 10).
+    std::sort(files.begin(), files.end(), [](const QString &a, const QString &b) {
+        const int pa = a.section(QLatin1Char('-'), 0, 0).toInt();
+        const int pb = b.section(QLatin1Char('-'), 0, 0).toInt();
+        if (pa != pb) return pa < pb;
+        return a < b;
+    });
+    return files;
 }
 
 void LauncherItems::renumber(const QStringList &orderedPaths)
