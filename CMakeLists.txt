@@ -50,6 +50,13 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
 )
 
 find_package(KWayland REQUIRED)
+# wlr-layer-shell, used only for the optional invisible "spacer" surface that
+# reserves screen space (exclusive zone) so maximized windows don't sit behind
+# the dock. The main dock window stays on org_kde_plasma_shell (Role::Panel) --
+# that's what keeps it visible during "Show Desktop" -- but that protocol has
+# no strut/exclusive-zone API, so the spacer uses layer-shell purely for its
+# exclusive zone. The two protocols never decorate the same window.
+find_package(LayerShellQt REQUIRED)
 
 find_path(PLASMA_WAYLAND_PROTOCOLS_DIR
     NAMES plasma-window-management.xml
@@ -68,7 +75,7 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Matias Fernandez <matias.fernandez@gmail.co
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_CONTACT "matias.fernandez@gmail.com")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
-    "qt6-base (>=6.6), qt6-declarative (>=6.6), qt6-wayland, libkf6config6, libkf6coreaddons6, libkf6windowsystem6, libkf6kio6, libkf6i18n6, libkwaylandclient6, qml6-module-qtquick-controls"
+    "qt6-base (>=6.6), qt6-declarative (>=6.6), qt6-wayland, libkf6config6, libkf6coreaddons6, libkf6windowsystem6, libkf6kio6, libkf6i18n6, libkwaylandclient6, liblayershellqtinterface6, qml6-module-qtquick-controls"
 )
 set(CPACK_DEBIAN_PACKAGE_SECTION "kde")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://gitlab.com/radixcl/kooldock2")

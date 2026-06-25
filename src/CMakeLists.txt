@@ -69,6 +69,7 @@ target_link_libraries(kooldock2 PRIVATE
     KF6::I18n
     KF6::ColorScheme
     Plasma::KWaylandClient
+    LayerShellQtInterface
 )
 
 install(TARGETS kooldock2 ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

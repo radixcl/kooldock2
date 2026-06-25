@@ -59,6 +59,7 @@ build:ubuntu:
         libkf6i18n-dev
         libkf6colorscheme-dev
         kwayland-dev
+        liblayershellqtinterface-dev
         plasma-wayland-protocols
         libwayland-dev
         libxcb1-dev

@@ -15,6 +15,8 @@
 #include <KWayland/Client/registry.h>
 #include <KWayland/Client/surface.h>
 
+#include <LayerShellQt/Window>
+
 #include <KConfigDialog>
 #include <KLocalizedContext>
 #include <KLocalizedString>
@@ -29,8 +31,10 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QIcon>
+#include <QPainter>
 #include <QPainterPath>
 #include <QProcess>
+#include <QRasterWindow>
 #include <QQmlContext>
 #include <QQuickImageProvider>
 #include <QQuickItem>
@@ -40,6 +44,33 @@
 #include <QUrl>
 
 #include <qnativeinterface.h>
+
+namespace {
+// The strut "spacer": a borderless, input-transparent window that commits a
+// fully transparent buffer. It only exists so that, decorated as a
+// layer-shell surface with an exclusive zone, KWin reserves screen space for
+// the dock. A buffer must actually be committed for the layer surface to map
+// and the exclusive zone to take effect, hence the painting (it just paints
+// nothing visible).
+class SpacerWindow : public QRasterWindow
+{
+public:
+    SpacerWindow()
+    {
+        setFlag(Qt::FramelessWindowHint);
+        setFlag(Qt::WindowDoesNotAcceptFocus);
+        setFlag(Qt::WindowTransparentForInput);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.fillRect(QRect(QPoint(0, 0), size()), Qt::transparent);
+    }
+};
+} // namespace
 
 static QString resolveFlatpakIcon(const QString &appId)
 {
@@ -463,6 +494,7 @@ void KoolDock::setupView()
     if (!autoHide()) {
         QTimer::singleShot(100, this, [this]() { applyBlur(); });
     }
+    applySpacer();
 }
 
 void KoolDock::applyPanelShell()
@@ -571,6 +603,91 @@ void KoolDock::applyPanelShell()
         << "devicePixelRatio=" << m_view->devicePixelRatio();
 
     applyInputMask(!m_containsMouse);
+}
+
+void KoolDock::applySpacer()
+{
+    // The dock window uses org_kde_plasma_shell (Role::Panel), which does not
+    // reserve screen space -- maximized windows draw all the way to the edge,
+    // behind the dock. When the user asks for panel-like behavior (and the
+    // dock isn't auto-hiding, where reserving space makes no sense), decorate
+    // a separate, invisible window with wlr-layer-shell and an exclusive zone,
+    // which KWin honors as a strut. The two protocols never touch the same
+    // surface, so the plasma-shell "stays visible during Show Desktop"
+    // behavior is unaffected.
+    const bool want = KoolDockSettings::reserveSpace() && !autoHide();
+    if (!want) {
+        if (m_spacerView) {
+            m_spacerView->hide(); // unmapping releases the reserved strut
+        }
+        return;
+    }
+
+    QScreen *chosen = QGuiApplication::primaryScreen();
+    const QString target = KoolDockSettings::screenName();
+    for (auto *s : QGuiApplication::screens()) {
+        if (s->name() == target) { chosen = s; break; }
+    }
+    if (!chosen) {
+        return;
+    }
+    const QRect g = chosen->geometry();
+
+    // Reserve only the pill's band: its height plus any positive edge gap.
+    // A negative edgeMargin tucks the pill past other panels toward the edge,
+    // so there's no extra gap to reserve in that case.
+    const int thickness = KoolDockSettings::dockHeight()
+        + qMax(0, KoolDockSettings::edgeMargin());
+
+    using LSW = LayerShellQt::Window;
+    LSW::Anchors anchors;
+    LSW::Anchor exclusiveEdge = LSW::AnchorNone;
+    QSize size;
+    switch (screenEdge()) {
+    case Qt::BottomEdge:
+        anchors = LSW::Anchors(LSW::AnchorBottom | LSW::AnchorLeft | LSW::AnchorRight);
+        exclusiveEdge = LSW::AnchorBottom;
+        size = QSize(g.width(), thickness);
+        break;
+    case Qt::TopEdge:
+        anchors = LSW::Anchors(LSW::AnchorTop | LSW::AnchorLeft | LSW::AnchorRight);
+        exclusiveEdge = LSW::AnchorTop;
+        size = QSize(g.width(), thickness);
+        break;
+    case Qt::LeftEdge:
+        anchors = LSW::Anchors(LSW::AnchorLeft | LSW::AnchorTop | LSW::AnchorBottom);
+        exclusiveEdge = LSW::AnchorLeft;
+        size = QSize(thickness, g.height());
+        break;
+    case Qt::RightEdge:
+        anchors = LSW::Anchors(LSW::AnchorRight | LSW::AnchorTop | LSW::AnchorBottom);
+        exclusiveEdge = LSW::AnchorRight;
+        size = QSize(thickness, g.height());
+        break;
+    }
+
+    if (!m_spacerView) {
+        auto *win = new SpacerWindow();
+        // Need an alpha channel so the committed buffer is actually
+        // transparent rather than opaque black.
+        QSurfaceFormat fmt = win->format();
+        fmt.setAlphaBufferSize(8);
+        win->setFormat(fmt);
+        // The layer-shell role must be attached before the platform window
+        // is created (i.e. before show()).
+        m_spacerLayer = LSW::get(win);
+        m_spacerLayer->setLayer(LSW::LayerTop);
+        m_spacerLayer->setScope(QStringLiteral("kooldock-spacer"));
+        m_spacerLayer->setKeyboardInteractivity(LSW::KeyboardInteractivityNone);
+        m_spacerView = win;
+    }
+
+    m_spacerView->setScreen(chosen);
+    m_spacerLayer->setAnchors(anchors);
+    m_spacerLayer->setExclusiveEdge(exclusiveEdge);
+    m_spacerLayer->setExclusiveZone(thickness);
+    m_spacerView->resize(size);
+    m_spacerView->show();
 }
 
 void KoolDock::applyGeometry()
@@ -784,6 +901,7 @@ void KoolDock::reconfigure()
     if (m_panelSurface) {
         applyPanelShell();
     }
+    applySpacer();
     applyBlur();
     Q_EMIT screenEdgeChanged();
     Q_EMIT autoHideChanged();

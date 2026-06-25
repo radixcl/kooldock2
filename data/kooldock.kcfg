@@ -10,6 +10,10 @@
       <label>Hide the dock until the pointer reaches the screen edge</label>
       <default>false</default>
     </entry>
+    <entry name="reserveSpace" type="Bool">
+      <label>Reserve screen space like a panel (maximized windows won't go behind the dock). Only takes effect when auto-hide is off.</label>
+      <default>true</default>
+    </entry>
     <entry name="hideOnClick" type="Bool">
       <label>Hide the dock when the user clicks an item</label>
       <default>false</default>

@@ -27,6 +27,11 @@ class PlasmaShellSurface;
 }
 }
 
+namespace LayerShellQt {
+class Window;
+}
+class QRasterWindow;
+
 class KoolDock : public QObject
 {
     Q_OBJECT
@@ -115,6 +120,12 @@ private Q_SLOTS:
 private:
     void setupView();
     void applyPanelShell();
+    // Creates/updates or hides the invisible layer-shell "spacer" surface
+    // that reserves screen space via its exclusive zone. Shown only when
+    // reserveSpace is on and auto-hide is off; the dock window itself
+    // (org_kde_plasma_shell) cannot reserve space, so this separate surface
+    // does it. Idempotent -- safe to call from reconfigure().
+    void applySpacer();
     void applyGeometry();
     void applyBlur();
     void applyInputMask(bool hidden);
@@ -129,6 +140,8 @@ private:
     KWayland::Client::PlasmaShell *m_plasmaShell = nullptr;
     KWayland::Client::PlasmaShellSurface *m_panelSurface = nullptr;
     QSize m_desiredPanelSize;
+    QPointer<QRasterWindow> m_spacerView;
+    LayerShellQt::Window *m_spacerLayer = nullptr;
     WindowTasks *m_tasks;
     DockModel *m_model;
     WindowActions *m_windowActions;

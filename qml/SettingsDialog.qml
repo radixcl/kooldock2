@@ -114,6 +114,14 @@ Item {
                         checked: settings ? settings.hideOnClick : false
                         onToggled: { if (settings) settings.hideOnClick = checked }
                     }
+                    CheckBox {
+                        text: i18n("Reserve screen space — maximized windows won't cover the dock")
+                        Layout.leftMargin: 10
+                        // Reserving space is meaningless while auto-hiding.
+                        enabled: settings ? !settings.autoHide : true
+                        checked: settings ? settings.reserveSpace : false
+                        onToggled: { if (settings) settings.reserveSpace = checked }
+                    }
 
                     Label { text: i18n("Extras"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
                     CheckBox {
