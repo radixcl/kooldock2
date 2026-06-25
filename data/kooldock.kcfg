@@ -190,6 +190,12 @@
       <label>Apply a blur behind the dock background (requires compositor support)</label>
       <default>true</default>
     </entry>
+    <entry name="blurMargin" type="Int">
+      <label>Extra pixels of blur beyond the pill edges (creates a soft halo). Use 0 to clip exactly to the pill.</label>
+      <default>0</default>
+      <min>0</min>
+      <max>200</max>
+    </entry>
     <entry name="themeName" type="String">
       <label>Name of the KPackage theme used for the background</label>
       <default>default</default>

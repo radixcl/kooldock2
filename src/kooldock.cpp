@@ -864,6 +864,7 @@ void KoolDock::applyBlur()
         const qreal length = m_blurLength;
         const qreal shortOffset = m_blurShortOffset;
         const int bgHeight = KoolDockSettings::dockHeight();
+        const int blurMargin = KoolDockSettings::blurMargin();
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
         QRectF rect;
         if (vert) {
@@ -873,6 +874,11 @@ void KoolDock::applyBlur()
             const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
             rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
         }
+        // Expand the blur region beyond the pill to create a soft halo.
+        // The corner radius grows with the margin so the blur stays
+        // rounded at the same visual proportion.
+        if (blurMargin > 0)
+            rect.adjust(-blurMargin, -blurMargin, blurMargin, blurMargin);
         // Use a rounded-rect path so the blur doesn't extend past the
         // pill's corners (which are transparent).  The QPainterPath →
         // QRegion chain can produce an empty region when integer
@@ -880,7 +886,7 @@ void KoolDock::applyBlur()
         // back to a plain aligned rect in that case so KWin never sees
         // an empty blur region (which it treats as "no blur").
         QPainterPath path;
-        path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
+        path.addRoundedRect(rect, m_blurRadius + blurMargin, m_blurRadius + blurMargin);
         QRegion region(path.toFillPolygon().toPolygon());
         if (region.isEmpty())
             region = QRegion(rect.toAlignedRect());

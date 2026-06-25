@@ -254,6 +254,18 @@ Item {
                         checked: settings ? settings.blurBackground : true
                         onToggled: { if (settings) settings.blurBackground = checked }
                     }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: settings ? settings.blurBackground : false
+                        Label { text: i18n("Blur margin:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 0; to: 200; stepSize: 4
+                            value: settings ? settings.blurMargin : 0
+                            onValueModified: { if (settings) settings.blurMargin = value }
+                        }
+                        Label { text: i18n("px — soft halo beyond pill edges"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
 
                     Label { text: i18n("Border"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
                     CheckBox {
