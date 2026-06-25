@@ -277,56 +277,78 @@ Item {
                 : (globalCrossPos > bar.cachedCrossExtent - crossHoverSize - spacing - crossMargin &&
                    globalCrossPos < bar.cachedCrossExtent + crossMargin))
 
-        // Step 1: sizes from a parabola centered at the mouse, iterated a
-        // few times against the running center estimate. Gated by both
-        // per-icon distance (dx < W) and containsMouse: icons within W of
-        // the mouse jump straight to their zoomed size the instant the
-        // cursor enters the dock's hover margin, rather than growing
-        // gradually as it approaches — intentional, not a smooth fade-in.
+        // ---- Continuous (macOS-style) magnification ----------------------
+        // The obvious approach — sample the parabola at each icon's centre
+        // and cumulatively sum the discrete sizes to get positions and the
+        // total width — ripples: a parabola sampled at discrete points that
+        // move relative to the cursor does not sum to a constant. As the
+        // peak passes between two icons the sum wobbles (period = iDist),
+        // which shows up as the pill's edges twitching and the surrounding
+        // icons jittering. The parabola's *continuous integral*, by
+        // contrast, is translation-invariant.
         //
-        // The iteration is what makes the biggest icon land *under* the
-        // cursor instead of one slot to the right. The Step 2 cumulative
-        // sum lays icons out left-to-right, so every leftward neighbour
-        // that also grew shoves the zoomed icon rightward of its rest slot;
-        // sizing off the *rest* slot (a single pass) makes the biggest icon
-        // end up just right of the cursor. Evaluating the parabola at each
-        // icon's *rendered* center (pass 2+) makes the icon that actually
-        // ends up under the cursor be the biggest — without shifting the
-        // row, which would un-center it from the background pill and break
-        // the edge-overflow guarantee (invariant #5). Converges in 2
-        // passes; 3 here for margin. localMousePos is read once above and
-        // held fixed across passes, so this stays clear of the bar-position
-        // feedback loop of invariants #1–2.
-        const sizes = []
-        let centersEst = null
-        for (let it = 0; it < 3; it++) {
-            for (let i = 0; i < N; i++) {
-                const ci = centersEst ? centersEst[i]
-                                      : (spacing + iDist * i + smallSize / 2)
-                const dx = localMousePos - ci
-                let sz = smallSize
-                if (containsMouse && Math.abs(dx) < W)
-                    sz = Math.max(smallSize, bigSize - (dx * dx * H) / (W * W))
-                sizes[i] = sz
-            }
-            centersEst = [spacing + sizes[0] / 2]
-            for (let i = 1; i < N; i++)
-                centersEst.push(centersEst[i-1] + (sizes[i] + sizes[i-1]) / 2 + spacing)
+        // So treat magnification as a continuous field: take icon sizes from
+        // the parabola at each icon's FIXED rest centre, and take positions
+        // from the analytic integral of that field (the extra width to the
+        // left of each icon), not from a discrete sum. Both are smooth
+        // functions of the cursor, so the pill and the icons stop wobbling
+        // while the curve and the zoom feel stay the same.
+
+        // Parabola bump (extra px over smallSize) at rest-coordinate x for a
+        // peak at rest-coordinate c. Zero outside [c-W, c+W].
+        const bumpAt = (x, c) => {
+            const d = (x - c) / W
+            return Math.abs(d) < 1 ? H * (1 - d * d) : 0
+        }
+        // Analytic ∫ bump dt from 0 to x (the bump is non-zero only on
+        // [c-W, c+W]; clamp the window to that and to t >= 0). Primitive of
+        // H(1 - ((t-c)/W)^2) is H[(t-c) - (t-c)^3/(3W^2)].
+        const bumpIntegral = (x, c) => {
+            const lo = Math.max(0, c - W)
+            const hi = Math.min(x, c + W)
+            if (hi <= lo) return 0
+            const prim = t => { const u = t - c; return H * (u - (u * u * u) / (3 * W * W)) }
+            return prim(hi) - prim(lo)
         }
 
-        // Step 2: final layout positions from the converged sizes. The row
-        // is always centered within [0, contentLength] by construction
-        // (icon 0 starts at `spacing`, the last icon ends at
-        // `contentLength - spacing`), so it stays centered relative to the
-        // background, which Main.qml sizes to match contentLength, with no
-        // extra recentring needed here:
-        // cur_cx[0] = spacing + size[0]/2
-        // cur_cx[i] = cur_cx[i-1] + (size[i] + size[i-1])/2 + spacing
-        const centers = centersEst
+        const u0 = spacing + smallSize / 2          // icon 0's rest centre
+        const restCenter = i => u0 + i * iDist       // fixed rest centres
 
-        // Total span of the row at its current (possibly zoomed) sizes,
-        // including the leading/trailing spacing — used by Main.qml to grow
-        // the background pill to hug the icons, macOS-style.
+        // The cursor's position in the *rest* frame, c. It maps to the
+        // rendered frame (where localMousePos lives) by adding the extra
+        // width to its left; the row is then re-pinned to `spacing`, which
+        // shifts everything by -leftExtra(u0). Solve c for
+        // rendered(c) = localMousePos by a few fixed-point passes — the
+        // extra-width terms are smooth and mild, so this converges fast.
+        // (Per-icon density: the continuous integral is divided by iDist to
+        // match what the discrete per-icon sum would have totalled.)
+        let c = localMousePos
+        if (containsMouse) {
+            for (let it = 0; it < 4; it++)
+                c = localMousePos - (bumpIntegral(c, c) - bumpIntegral(u0, c)) / iDist
+        }
+
+        // Sizes from the field at fixed rest centres; centres from u_i plus
+        // the extra width to the left (the integral) plus half the icon's
+        // own growth, so the biggest icon lands under the cursor.
+        const sizes = []
+        const centers = []
+        for (let i = 0; i < N; i++) {
+            const u = restCenter(i)
+            const e = containsMouse ? bumpAt(u, c) : 0
+            const leftExtra = containsMouse ? bumpIntegral(u, c) / iDist : 0
+            sizes[i] = smallSize + e
+            centers[i] = u + leftExtra + e / 2
+        }
+
+        // Re-pin the row flush at `spacing` from the pill's left edge so it
+        // stays centred within contentLength (Main.qml centres the pill on
+        // screen), same guarantee the old cumulative layout gave for free.
+        const shift = spacing + sizes[0] / 2 - centers[0]
+        for (let i = 0; i < N; i++) centers[i] += shift
+
+        // Total span (smooth — from the integral, not a rippling sum), used
+        // by Main.qml to grow the background pill to hug the icons.
         bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
 
         // Feeds next frame's cross-axis entry margin above — see the
@@ -335,9 +357,8 @@ Item {
         bar.lastMaxIconSize = Math.max(smallSize, ...sizes)
 
         for (let i = 0; i < N; i++) {
-            const pos = centers[i] - sizes[i] / 2
             listModel.setProperty(i, "sz", sizes[i])
-            listModel.setProperty(i, "ipos", pos)
+            listModel.setProperty(i, "ipos", centers[i] - sizes[i] / 2)
         }
     }
 
