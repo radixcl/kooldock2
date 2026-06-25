@@ -205,6 +205,37 @@ below were only caught this way.
     on any distro shipping LayerShellQt ≥ 6.6.4 **must** use
     `setDesiredSize`.
 
+11. **The blur region is pushed to KWin frame-aligned, rate-limited, and
+    deduplicated — never from a free-running timer.** The dock window is
+    full-screen and transparent except for the pill; if KWin ever blurs
+    outside the pill's current bounds you get blurred desktop floating with
+    nothing painted on it — a visible flash, near-full-screen on a wide
+    dock. Two failure modes both produce this:
+    - **Phase drift.** QML animates the pill geometry at 60 fps and pushes
+      the region via `updateBlurRegion()`. If `enableBlurBehind()` runs on
+      an independent `QTimer`, the timer and vsync drift in and out of
+      phase and KWin periodically applies a region that doesn't match the
+      committed buffer for a frame. Fix: `flushBlur()` is driven by
+      `QQuickWindow::afterAnimating` (gui thread, once per frame, *after*
+      QML advanced this frame's geometry and *before* the scene is
+      synced/committed), so the region rides the same frame as its buffer.
+      The `m_blurTimer` survives only as the trailing-flush fallback for
+      when rendering goes idle before another `afterAnimating` fires.
+    - **Regeneration churn.** Every `enableBlurBehind()` makes KWin
+      regenerate the blurred backbuffer; it can't keep up at 60 fps and
+      glitches. `flushBlur()` rate-limits to `kBlurIntervalMs` (~30 fps),
+      and `applyBlur()` skips the call entirely when the computed region
+      equals the last one pushed (`m_lastBlurRegion`/`m_lastBlurState`).
+
+    Don't move the push back onto a bare timer, don't call
+    `enableBlurBehind()` per frame, and don't drop the region dedup.
+    `reconfigure()` must reset `m_lastBlurState = -1` because an edge/size
+    change makes the cached region describe a different surface. A `<= 0`
+    `m_blurLength` (QML hasn't pushed yet) must early-return leaving
+    `m_blurDirty` set so a later frame retries — never fall back to
+    `m_view->width()`, which blurs the full panel-sized window (commit
+    a6c9943).
+
 ## Settings wiring pattern
 
 Geometry settings (icon sizes, spacing, zoom amount/speed) flow from the

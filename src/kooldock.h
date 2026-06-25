@@ -5,10 +5,12 @@
 #ifndef KOOLDOCK_H
 #define KOOLDOCK_H
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <QQuickView>
+#include <QRegion>
 #include <QSize>
 #include <QTimer>
 
@@ -128,6 +130,14 @@ private:
     void applySpacer();
     void applyGeometry();
     void applyBlur();
+    // Pushes the pending blur region to KWin at most once per throttle
+    // interval, driven by QQuickWindow::afterAnimating so each update
+    // rides the same gui-thread frame that produced the matching pill
+    // geometry (rather than a free-running timer phase-drifting against
+    // vsync — the cause of the intermittent full-screen blur flash). The
+    // throttle timer is the trailing-flush fallback for when rendering
+    // goes idle before another frame is produced.
+    void flushBlur();
     void applyInputMask(bool hidden);
     void reconfigure();
     void refreshScreens();
@@ -158,6 +168,16 @@ private:
     qreal m_blurShortOffset = 0;
     qreal m_blurRadius = 0;
     bool m_blurDirty = false;
+    // Last region/state actually pushed to KWin, so applyBlur() can skip
+    // redundant enableBlurBehind() calls (each one makes KWin regenerate
+    // the blurred backbuffer; churning it every frame is what made KWin
+    // glitch the blur full-screen for a frame). m_lastBlurState: -1
+    // unknown, 0 disabled, 1 enabled.
+    QRegion m_lastBlurRegion;
+    int m_lastBlurState = -1;
+    // Time since the last enableBlurBehind() push, for the flushBlur()
+    // rate limit (~30 fps — KWin can't regenerate the blur at 60 fps).
+    QElapsedTimer m_blurThrottle;
     QTimer m_hideTimer;
     QTimer m_shrinkTimer;
     QTimer m_tooltipShrinkTimer;

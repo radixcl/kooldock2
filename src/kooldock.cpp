@@ -70,6 +70,11 @@ protected:
         p.fillRect(QRect(QPoint(0, 0), size()), Qt::transparent);
     }
 };
+
+// Minimum interval between enableBlurBehind() pushes (~30 fps). KWin
+// regenerates the blurred backbuffer on every call and can't keep up at
+// the 60 fps QML drives geometry at; flushBlur() coalesces to this rate.
+constexpr int kBlurIntervalMs = 32;
 } // namespace
 
 static QString resolveFlatpakIcon(const QString &appId)
@@ -195,14 +200,15 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
 
     // Throttle blur region updates: QML pushes new geometry every frame
     // (60 fps) during the zoom animation, but every enableBlurBehind
-    // call tells KWin to regenerate the blurred background — KWin
-    // can't keep up at 60 fps and drops the blur for a frame.  A
-    // single-shot timer restarted by updateBlurRegion (and re-armed
-    // by applyBlur if more updates arrived while waiting) applies the
-    // latest values at most every 32 ms (~30 fps).
+    // call tells KWin to regenerate the blurred background — KWin can't
+    // keep up at 60 fps and drops (or full-screen-flashes) the blur for
+    // a frame.  flushBlur() applies the latest region at most every
+    // 32 ms (~30 fps); this single-shot timer is its trailing-flush
+    // fallback for when rendering goes idle before another frame fires
+    // afterAnimating (see flushBlur()).
     m_blurTimer.setSingleShot(true);
-    m_blurTimer.setInterval(32);
-    connect(&m_blurTimer, &QTimer::timeout, this, &KoolDock::applyBlur);
+    m_blurTimer.setInterval(kBlurIntervalMs);
+    connect(&m_blurTimer, &QTimer::timeout, this, &KoolDock::flushBlur);
 
     m_tooltipShrinkTimer.setSingleShot(true);
     // Tooltip extent is no longer used for window sizing — all tooltip
@@ -461,6 +467,14 @@ void KoolDock::setupView()
     }
 
     m_view->setResizeMode(QQuickView::SizeRootObjectToView);
+
+    // Drive blur-region pushes from the gui-thread frame callback rather
+    // than a free-running timer: afterAnimating fires once per frame on
+    // the gui thread, after QML animations have advanced the pill
+    // geometry for this frame and before the scene is synced/committed,
+    // so the region we push lands together with the buffer it matches.
+    // flushBlur() rate-limits and dedups; idle frames cost nothing.
+    connect(m_view, &QQuickWindow::afterAnimating, this, &KoolDock::flushBlur);
 
     // Re-apply position/size now that the resize mode above is in effect.
     // QQuickView's default SizeViewToRootObject mode (in force while
@@ -849,17 +863,14 @@ void KoolDock::applyInputMask(bool hidden)
 void KoolDock::applyBlur()
 {
     if (!m_view) return;
-    m_blurDirty = false;
     if (KoolDockSettings::blurBackground()) {
         // If QML hasn't pushed a blur region yet (m_blurLength == 0),
         // skip — the fallback to m_view->width() would blur the full
-        // screen for a frame since the window is panel-sized.
-        if (m_blurLength <= 0) {
-            // Not initialized yet — retry so the blur eventually goes live.
-            if (!m_blurTimer.isActive())
-                m_blurTimer.start();
+        // screen for a frame since the window is panel-sized. Leave
+        // m_blurDirty set so a later frame/flush retries.
+        if (m_blurLength <= 0)
             return;
-        }
+        m_blurDirty = false;
         const qreal pos = m_blurPos;
         const qreal length = m_blurLength;
         const qreal shortOffset = m_blurShortOffset;
@@ -890,14 +901,42 @@ void KoolDock::applyBlur()
         QRegion region(path.toFillPolygon().toPolygon());
         if (region.isEmpty())
             region = QRegion(rect.toAlignedRect());
+        // Skip the call entirely if the region is unchanged — every
+        // enableBlurBehind() makes KWin regenerate the blurred backbuffer,
+        // and churning identical regions is what let it glitch full-screen.
+        if (m_lastBlurState == 1 && region == m_lastBlurRegion)
+            return;
         KWindowEffects::enableBlurBehind(m_view, true, region);
+        m_lastBlurRegion = region;
+        m_lastBlurState = 1;
     } else {
+        m_blurDirty = false;
+        if (m_lastBlurState == 0)
+            return;
         KWindowEffects::enableBlurBehind(m_view, false);
+        m_lastBlurRegion = QRegion();
+        m_lastBlurState = 0;
     }
-    // If QML pushed more updates while we were waiting for this timer
-    // tick, re-arm so we catch up in the next interval.
-    if (m_blurDirty)
-        m_blurTimer.start();
+}
+
+void KoolDock::flushBlur()
+{
+    if (!m_blurDirty) return;
+    // Rate-limit to ~30 fps: KWin can't regenerate the blur every frame.
+    // afterAnimating fires ~60 fps during the zoom animation, so coalesce;
+    // when we're inside the throttle window, arm the timer to retry once
+    // it closes (covers the case where rendering goes idle right after a
+    // change and no further afterAnimating arrives to flush the final
+    // region). Use the no-arg start() so the timer keeps its configured
+    // interval — start(msec) would overwrite it.
+    if (m_blurThrottle.isValid() && m_blurThrottle.elapsed() < kBlurIntervalMs) {
+        if (!m_blurTimer.isActive())
+            m_blurTimer.start();
+        return;
+    }
+    m_blurTimer.stop();
+    applyBlur();
+    m_blurThrottle.restart();
 }
 
 void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius)
@@ -907,6 +946,9 @@ void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffs
     m_blurShortOffset = shortOffset;
     m_blurRadius = radius;
     m_blurDirty = true;
+    // The flush rides the next afterAnimating frame (the QML change that
+    // called us is already driving a render). Arm the timer only as the
+    // trailing-flush fallback for when no further frame is produced.
     if (!m_blurTimer.isActive())
         m_blurTimer.start();
 }
@@ -922,6 +964,9 @@ void KoolDock::reconfigure()
     // so m_blurPos/m_blurLength may be stale or zero (producing a
     // full-screen blur flash).  Arm the throttled timer instead; QML
     // will push fresh values via updateBlurRegion before it fires.
+    // The edge/size may have changed, so the cached region no longer
+    // describes the same surface — force the next push through the dedup.
+    m_lastBlurState = -1;
     m_blurDirty = true;
     if (!m_blurTimer.isActive())
         m_blurTimer.start();
