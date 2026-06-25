@@ -23,6 +23,19 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QRegularExpression>
+
+// Strip freedesktop.org field codes (%u, %U, %f, %F, %% etc.)
+// from an Exec= line. KIO::CommandLauncherJob does not expand these,
+// and file/URL codes are N/A when launching from a dock.
+static QString stripExecFieldCodes(const QString &exec)
+{
+    QString s = exec;
+    // Remove single-URL and single-file placeholders (no URL/file in dock context)
+    s.remove(QRegularExpression(QStringLiteral("%[uUfF]")));
+    // Replace %% with literal %
+    s.replace(QStringLiteral("%%"), QStringLiteral("%"));
+    return s.trimmed();
+}
 #include <QStandardPaths>
 
 DockModel::DockModel(WindowTasks *tasks, bool debug, QObject *parent)
@@ -151,24 +164,32 @@ void DockModel::launch(int row)
 
     const QString desktopFile = item->desktopFile();
     if (!desktopFile.isEmpty()) {
+        // Prefer sycoca-cached KService; falls back on an uncached one
+        // built directly from the .desktop file so that ApplicationLauncherJob
+        // can expand freedesktop.org field codes (%u, %U, %f, %F, %i, …).
         KService::Ptr service = KService::serviceByDesktopPath(desktopFile);
-        if (service) {
+        if (!service) {
+            service.reset(new KService(desktopFile));
+        }
+        if (service && service->isValid()) {
             auto *job = new KIO::ApplicationLauncherJob(service);
             job->setUiDelegate(nullptr);
             job->start();
             return;
         }
+        // Last resort: the file may be malformed; read Exec= raw and strip
+        // file/URL field codes that KIO::CommandLauncherJob cannot expand.
         KDesktopFile df(desktopFile);
         const QString exec = df.desktopGroup().readEntry(QStringLiteral("Exec"), QString());
         if (!exec.isEmpty()) {
-            auto *job = new KIO::CommandLauncherJob(exec);
+            auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(exec));
             job->setUiDelegate(nullptr);
             job->start();
             return;
         }
     }
     if (!item->command().isEmpty()) {
-        auto *job = new KIO::CommandLauncherJob(item->command());
+        auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(item->command()));
         job->setUiDelegate(nullptr);
         job->start();
     }
@@ -844,7 +865,7 @@ void DockModel::triggerDesktopAction(int row, const QString &actionId)
     const QString exec = group.readEntry(QStringLiteral("Exec"), QString());
     if (exec.isEmpty()) return;
 
-    auto *job = new KIO::CommandLauncherJob(exec);
+    auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(exec));
     job->setUiDelegate(nullptr);
     job->start();
 }
