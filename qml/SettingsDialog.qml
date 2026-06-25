@@ -545,11 +545,15 @@ Item {
                             id: fontDialog
                             title: i18n("Select Tooltip Font")
                             currentFont.family: settings ? settings.tooltipFont : "Sans Serif"
-                            currentFont.pixelSize: settings ? settings.tooltipSize : 12
+                            // QFontDialog works in point sizes internally;
+                            // pixelSize is always -1 on the returned font.
+                            // Convert from logical pixels to points for the
+                            // initial value and back on accept (96 dpi).
+                            currentFont.pointSize: settings ? settings.tooltipSize * 3 / 4 : 9
                             onAccepted: {
                                 if (settings) {
                                     settings.tooltipFont = selectedFont.family
-                                    settings.tooltipSize = selectedFont.pixelSize
+                                    settings.tooltipSize = Math.round(selectedFont.pointSize * 4 / 3)
                                 }
                             }
                         }
