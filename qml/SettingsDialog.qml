@@ -537,8 +537,12 @@ Item {
                         Label { text: i18n("Font:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         Button {
                             id: fontButton
+                            // FontDialog works in points; show the point
+                            // size here so the displayed number matches
+                            // what the user sees in the picker.  The
+                            // setting is stored in logical pixels.
                             text: (settings ? settings.tooltipFont : "Sans Serif") +
-                                  " " + (settings ? settings.tooltipSize : 12) + "px"
+                                  " " + (settings ? Math.round(settings.tooltipSize * 3 / 4) : 9) + " pt"
                             onClicked: fontDialog.open()
                         }
                         FontDialog {
@@ -546,13 +550,12 @@ Item {
                             title: i18n("Select Tooltip Font")
                             currentFont.family: settings ? settings.tooltipFont : "Sans Serif"
                             // QFontDialog works in point sizes internally;
-                            // pixelSize is always -1 on the returned font.
-                            // Convert from logical pixels to points for the
-                            // initial value and back on accept (96 dpi).
+                            // selectedFont.pixelSize is always -1.
                             currentFont.pointSize: settings ? settings.tooltipSize * 3 / 4 : 9
                             onAccepted: {
                                 if (settings) {
                                     settings.tooltipFont = selectedFont.family
+                                    // Convert points back to logical pixels (96 dpi).
                                     settings.tooltipSize = Math.round(selectedFont.pointSize * 4 / 3)
                                 }
                             }
