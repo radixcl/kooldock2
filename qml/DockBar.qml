@@ -214,6 +214,15 @@ Item {
         const H = bigSize - smallSize
         const iDist = smallSize + spacing
 
+        // The bar stays centred within the window.  When the mouse first
+        // enters and icons zoom, contentLength grows, shifting the bar
+        // left by half the growth.  Computing localMousePos with rest
+        // contentLength makes the cursor appear left of where it really
+        // is, so the zoom peak lands one slot to the left.  Save the
+        // pre-transition hover state so we can re-run with the corrected
+        // bar position after contentLength is known (see end of layout()).
+        const wasHovering = bar.containsMouse
+
         // Project the cursor onto the bar's [0, contentLength] frame using
         // *last* layout's contentLength (read here, before it's overwritten
         // below) — see the comment on windowExtent/globalMousePos above for
@@ -354,6 +363,17 @@ Item {
         // Total span (smooth — from the integral, not a rippling sum), used
         // by Main.qml to grow the background pill to hug the icons.
         bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
+
+        // First frame of hover: barNearEdge was computed with the rest
+        // contentLength, which makes localMousePos appear ~(Δlength/2) px
+        // left of the true position.  Re-run with the now-correct zoomed
+        // contentLength so the biggest icon lands under the cursor.  Only
+        // one extra pass — wasHovering is already true in the re-entrant
+        // call so there's no infinite recursion.
+        if (!wasHovering && bar.containsMouse) {
+            layout()
+            return
+        }
 
         // Feeds next frame's cross-axis entry margin above — see the
         // property declaration for why this needs to track the current
