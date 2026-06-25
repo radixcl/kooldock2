@@ -46,6 +46,8 @@ Item {
             //  BEHAVIOR
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -162,6 +164,8 @@ Item {
             //  APPEARANCE
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -309,6 +313,8 @@ Item {
             //  ICONS
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -401,6 +407,8 @@ Item {
             //  TASKS
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -510,6 +518,8 @@ Item {
             //  TOOLTIPS
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -652,6 +662,8 @@ Item {
             //  ABOUT
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
