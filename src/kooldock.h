@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QQuickView>
+#include <QSize>
 #include <QTimer>
 
 #include <KSharedConfig>
@@ -19,7 +20,12 @@
 class WindowTasks;
 class KConfigDialog;
 
-namespace LayerShellQt { class Window; }
+namespace KWayland {
+namespace Client {
+class PlasmaShell;
+class PlasmaShellSurface;
+}
+}
 
 class KoolDock : public QObject
 {
@@ -108,7 +114,7 @@ private Q_SLOTS:
 
 private:
     void setupView();
-    void applyLayerShell();
+    void applyPanelShell();
     void applyGeometry();
     void applyBlur();
     void applyInputMask(bool hidden);
@@ -120,7 +126,9 @@ private:
     int maxDockShortSize() const;
 
     QPointer<QQuickView> m_view;
-    LayerShellQt::Window *m_layer = nullptr;
+    KWayland::Client::PlasmaShell *m_plasmaShell = nullptr;
+    KWayland::Client::PlasmaShellSurface *m_panelSurface = nullptr;
+    QSize m_desiredPanelSize;
     WindowTasks *m_tasks;
     DockModel *m_model;
     WindowActions *m_windowActions;

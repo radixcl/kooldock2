@@ -29,6 +29,7 @@ Item {
     readonly property int taskDotSize: settings ? settings.taskIndicatorSize : 4
     readonly property color taskDotColor: settings ? settings.taskIndicatorColor : "#aaffffff"
     readonly property real taskDotOpacity: settings ? settings.taskIndicatorOpacity : 0.6
+    readonly property bool showWindowCountBadge: settings ? settings.showWindowCountBadge : true
     readonly property int tooltipDelay: settings ? settings.tooltipDelay : 500
     readonly property int tooltipTimeout: settings ? settings.tooltipTimeout : 2000
     readonly property int tooltipSize: settings ? settings.tooltipSize : 12
@@ -239,6 +240,7 @@ Item {
             taskDotSize: root.taskDotSize
             taskDotColor: root.taskDotColor
             taskDotOpacity: root.taskDotOpacity
+            showWindowCountBadge: root.showWindowCountBadge
             tooltipDelay: root.tooltipDelay
             tooltipTimeout: root.tooltipTimeout
             tooltipSize: root.tooltipSize

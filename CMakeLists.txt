@@ -49,7 +49,7 @@ find_package(KF6 ${KF_MIN_VERSION} REQUIRED COMPONENTS
     ColorScheme
 )
 
-find_package(LayerShellQt REQUIRED)
+find_package(KWayland REQUIRED)
 
 find_path(PLASMA_WAYLAND_PROTOCOLS_DIR
     NAMES plasma-window-management.xml
@@ -68,7 +68,7 @@ set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Matias Fernandez <matias.fernandez@gmail.co
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_CONTACT "matias.fernandez@gmail.com")
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
-    "qt6-base (>=6.6), qt6-declarative (>=6.6), qt6-wayland, libkf6config6, libkf6coreaddons6, libkf6windowsystem6, libkf6kio6, libkf6i18n6, liblayershellqtinterface6, qml6-module-qtquick-controls"
+    "qt6-base (>=6.6), qt6-declarative (>=6.6), qt6-wayland, libkf6config6, libkf6coreaddons6, libkf6windowsystem6, libkf6kio6, libkf6i18n6, libkwaylandclient6, qml6-module-qtquick-controls"
 )
 set(CPACK_DEBIAN_PACKAGE_SECTION "kde")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://gitlab.com/radixcl/kooldock2")

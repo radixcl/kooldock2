@@ -411,6 +411,12 @@ Item {
                     }
 
                     Label { text: i18n("Running Indicator"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
+                    CheckBox {
+                        text: i18n("Show window count badge on grouped tasks")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.showWindowCountBadge : true
+                        onToggled: { if (settings) settings.showWindowCountBadge = checked }
+                    }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Dot size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }

@@ -81,6 +81,7 @@ private:
     Item *findTaskForAppId(const QString &appId) const;
     QString desktopPathForAppId(const QString &appId) const;
     QString desktopFileForRow(int row) const;
+    QString resolveIconName(const QString &appId, const QString &waylandIconName) const;
 
     QList<Item *> m_items;
     QHash<quint64, Item *> m_taskItems;

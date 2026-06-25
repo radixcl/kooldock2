@@ -19,8 +19,11 @@
 #include <KIO/CommandLauncherJob>
 
 #include <QDebug>
+#include <QDir>
 #include <QFileInfo>
+#include <QIcon>
 #include <QRegularExpression>
+#include <QStandardPaths>
 
 DockModel::DockModel(WindowTasks *tasks, bool debug, QObject *parent)
     : QAbstractListModel(parent)
@@ -110,7 +113,10 @@ void DockModel::activateWindow(quint64 windowId)
     // is clicked again and it's not minimized, minimize it. If it's already
     // minimized, activate it. The compositor doesn't report activeWindow
     // to panel clients, so we can't rely on m_tasks->activeWindow().
-    if (windowId == m_lastActivatedWindow && !data.minimized) {
+    // While "Show Desktop" is active, always activate instead: nothing is
+    // really "shown" right now, so toggling to minimize would do nothing
+    // visible and leave the dock looking unresponsive.
+    if (windowId == m_lastActivatedWindow && !data.minimized && !KWindowSystem::showingDesktop()) {
         if (m_debug) qDebug() << "  activateWindow: minimizing" << windowId;
         m_tasks->requestMinimize(windowId);
         m_lastActivatedWindow = 0;
@@ -131,7 +137,7 @@ void DockModel::activateSpecificWindow(quint64 windowId)
     }
 
     const WindowTasks::TaskData data = m_tasks->taskData(windowId);
-    if (windowId == m_lastActivatedWindow && !data.minimized) {
+    if (windowId == m_lastActivatedWindow && !data.minimized && !KWindowSystem::showingDesktop()) {
         m_tasks->requestMinimize(windowId);
         m_lastActivatedWindow = 0;
     } else {
@@ -395,7 +401,8 @@ void DockModel::onWindowAdded(quint64 windowId)
     }
 
     if (m_debug) qDebug() << "  creating new standalone task for" << data.title;
-    auto *item = new Item(Item::Kind::Task, data.title, data.iconName, QString(), windowId);
+    const QString iconName = resolveIconName(data.appId, data.iconName);
+    auto *item = new Item(Item::Kind::Task, data.title, iconName, QString(), windowId);
     item->setMinimized(data.minimized);
     item->setActive(data.active);
     item->setAppId(data.appId);
@@ -557,7 +564,7 @@ void DockModel::onWindowChanged(quint64 windowId)
     item->setMinimized(data.minimized);
     if (item->isTask()) {
         item->setName(data.title);
-        item->setIconName(data.iconName);
+        item->setIconName(resolveIconName(data.appId, data.iconName));
         item->setAppId(data.appId);
     }
 
@@ -680,22 +687,123 @@ bool DockModel::isLauncher(int row) const
 QString DockModel::desktopPathForAppId(const QString &appId) const
 {
     if (appId.isEmpty()) return {};
-    // Try KService to resolve the appId to a .desktop file path.
-    const KService::Ptr service = KService::serviceByDesktopName(appId);
-    if (service) {
-        const QString path = service->entryPath();
-        if (!path.isEmpty() && QFile::exists(path)) return path;
-    }
-    // Try with "org.kde." prefix stripped (some apps report full reverse-DNS).
-    if (appId.startsWith(QStringLiteral("org.kde."))) {
-        const QString stripped = appId.mid(8);
-        const KService::Ptr s2 = KService::serviceByDesktopName(stripped);
-        if (s2) {
-            const QString path = s2->entryPath();
+
+    auto tryService = [](const QString &name) -> QString {
+        const KService::Ptr service = KService::serviceByDesktopName(name);
+        if (service) {
+            const QString path = service->entryPath();
             if (!path.isEmpty() && QFile::exists(path)) return path;
         }
+        return {};
+    };
+
+    // 1. Exact match as provided by the compositor.
+    QString path = tryService(appId);
+    if (!path.isEmpty()) return path;
+
+    // 2. Strip "org.kde." prefix (common for KDE apps).
+    if (appId.startsWith(QStringLiteral("org.kde."))) {
+        path = tryService(appId.mid(8));
+        if (!path.isEmpty()) return path;
     }
+
+    // 3. If the appId looks like reverse-DNS (contains dots), try each
+    // dot-separated component as a desktop name.  Many apps use IDs like
+    // "com.github.user.AppName" where the desktop file is "AppName.desktop"
+    // or "com.github.user.AppName.desktop".
+    if (appId.contains(QLatin1Char('.'))) {
+        const QStringList parts = appId.split(QLatin1Char('.'));
+        // Try the last component first (most likely to be the app name).
+        if (!parts.last().isEmpty()) {
+            path = tryService(parts.last());
+            if (!path.isEmpty()) return path;
+            // Try case-insensitive.
+            path = tryService(parts.last().toLower());
+            if (!path.isEmpty()) return path;
+        }
+        // Try the second-to-last component (e.g. "net.sourceforge.MultiVNC"
+        // where "sourceforge" is not the app name but "MultiVNC" is last).
+        if (parts.size() >= 2 && !parts.at(parts.size() - 2).isEmpty()) {
+            path = tryService(parts.at(parts.size() - 2));
+            if (!path.isEmpty()) return path;
+        }
+    }
+
+    // 4. Case-insensitive exact match.
+    const QString lower = appId.toLower();
+    if (lower != appId) {
+        path = tryService(lower);
+        if (!path.isEmpty()) return path;
+    }
+
+    // 5. Search well-known application directories for desktop files
+    // whose base name (without .desktop) fuzzy-matches the appId.
+    const QStringList dirs = {
+        QStringLiteral("/usr/share/applications"),
+        QStringLiteral("/usr/local/share/applications"),
+        QStringLiteral("/var/lib/flatpak/exports/share/applications"),
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+            + QStringLiteral("/applications"),
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+            + QStringLiteral("/flatpak/exports/share/applications"),
+    };
+    for (const QString &dir : dirs) {
+        QDir d(dir);
+        if (!d.exists()) continue;
+        const QStringList files = d.entryList({QStringLiteral("*.desktop")}, QDir::Files);
+        // Exact match first.
+        for (const QString &file : files) {
+            const QString name = file.chopped(8);
+            if (name.compare(appId, Qt::CaseInsensitive) == 0)
+                return d.absoluteFilePath(file);
+        }
+        // Partial match: the appId is often the last component of a
+        // reverse-DNS Flatpak ID (e.g. appId="multivnc" matches
+        // "net.christianbeier.MultiVNC.desktop").
+        for (const QString &file : files) {
+            const QString name = file.chopped(8);
+            if (name.contains(appId, Qt::CaseInsensitive))
+                return d.absoluteFilePath(file);
+        }
+    }
+
     return {};
+}
+
+QString DockModel::resolveIconName(const QString &appId, const QString &waylandIconName) const
+{
+    // Prefer the .desktop file's Icon= as the canonical source — this is
+    // what the KDE taskbar does via libtaskmanager (KService → readIcon()).
+    // The Wayland protocol's themed_icon_name is only a fallback for apps
+    // that don't have an installed .desktop file (custom/proprietary apps
+    // that set their icon at runtime via xdg_toplevel).
+    if (!appId.isEmpty()) {
+        const QString desktopPath = desktopPathForAppId(appId);
+        if (!desktopPath.isEmpty()) {
+            KDesktopFile df(desktopPath);
+            const QString desktopIcon = df.readIcon();
+            if (!desktopIcon.isEmpty())
+                return desktopIcon;
+        }
+    }
+
+    // No .desktop file or its Icon= was empty — use the compositor-provided
+    // themed icon name if it resolves in the current icon theme.
+    if (!waylandIconName.isEmpty()) {
+        if (QIcon::hasThemeIcon(waylandIconName))
+            return waylandIconName;
+        const QString lower = waylandIconName.toLower();
+        if (lower != waylandIconName && QIcon::hasThemeIcon(lower))
+            return lower;
+    }
+
+    // Last resort: the appId itself might work as an icon name (e.g. for
+    // Flatpak apps where the appId is a reverse-DNS name that matches an
+    // icon shipped with the Flatpak).
+    if (!appId.isEmpty() && QIcon::hasThemeIcon(appId))
+        return appId;
+
+    return waylandIconName; // keep whatever we had (likely empty)
 }
 
 QString DockModel::desktopFileForRow(int row) const

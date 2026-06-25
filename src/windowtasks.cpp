@@ -94,6 +94,14 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
 
 void WindowTasks::requestActivate(quint64 windowId)
 {
+    // "Show Desktop" (Super+D) hides windows without un-mapping them, and
+    // activating a window through the wayland set_state/X11 NETWM request
+    // doesn't implicitly clear it. Without this, the dock can look
+    // unresponsive while peeking at the desktop.
+    if (KWindowSystem::showingDesktop()) {
+        KWindowSystem::setShowingDesktop(false);
+    }
+
     if (m_waylandTasks) {
         m_waylandTasks->requestActivate(windowId);
         return;

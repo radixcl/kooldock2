@@ -232,6 +232,10 @@
       <min>0</min>
       <max>1</max>
     </entry>
+    <entry name="showWindowCountBadge" type="Bool">
+      <label>Show a numeric badge with the window count on grouped tasks</label>
+      <default>true</default>
+    </entry>
     <entry name="showNotifications" type="Bool">
       <label>Highlight a taskbar icon when its window changes while inactive</label>
       <default>true</default>
