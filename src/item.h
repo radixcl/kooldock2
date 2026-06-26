@@ -15,6 +15,7 @@ class Item : public QObject
     Q_PROPERTY(QString iconName READ iconName WRITE setIconName NOTIFY iconNameChanged)
     Q_PROPERTY(QString command READ command WRITE setCommand NOTIFY commandChanged)
     Q_PROPERTY(QString desktopFile READ desktopFile WRITE setDesktopFile NOTIFY desktopFileChanged)
+    Q_PROPERTY(QString sourceDesktopFile READ sourceDesktopFile WRITE setSourceDesktopFile NOTIFY sourceDesktopFileChanged)
     Q_PROPERTY(QString appId READ appId WRITE setAppId NOTIFY appIdChanged)
     Q_PROPERTY(quint64 windowId READ windowId WRITE setWindowId NOTIFY windowIdChanged)
     Q_PROPERTY(int windowCount READ windowCount NOTIFY windowCountChanged)
@@ -47,6 +48,7 @@ public:
     QString iconName() const { return m_iconName; }
     QString command() const { return m_command; }
     QString desktopFile() const { return m_desktopFile; }
+    QString sourceDesktopFile() const { return m_sourceDesktopFile; }
     QString appId() const { return m_appId; }
     quint64 windowId() const { return m_windowId; }
     bool isTask() const { return m_kind == Kind::Task; }
@@ -120,6 +122,7 @@ public:
     void setIconName(const QString &n) { if (m_iconName != n) { m_iconName = n; Q_EMIT iconNameChanged(); } }
     void setCommand(const QString &c) { if (m_command != c) { m_command = c; Q_EMIT commandChanged(); } }
     void setDesktopFile(const QString &p) { if (m_desktopFile != p) { m_desktopFile = p; Q_EMIT desktopFileChanged(); } }
+    void setSourceDesktopFile(const QString &p) { if (m_sourceDesktopFile != p) { m_sourceDesktopFile = p; Q_EMIT sourceDesktopFileChanged(); } }
     void setAppId(const QString &id) { if (m_appId != id) { m_appId = id; Q_EMIT appIdChanged(); } }
     void setWindowId(quint64 id) {
         if (m_windowId != id) {
@@ -155,6 +158,7 @@ Q_SIGNALS:
     void iconNameChanged();
     void commandChanged();
     void desktopFileChanged();
+    void sourceDesktopFileChanged();
     void appIdChanged();
     void windowIdChanged();
     void isActiveChanged();
@@ -171,6 +175,7 @@ private:
     QString m_iconName;
     QString m_command;
     QString m_desktopFile;
+    QString m_sourceDesktopFile;
     QString m_appId;
     quint64 m_windowId = 0;
     bool m_isActive = false;

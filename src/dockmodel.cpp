@@ -162,14 +162,41 @@ void DockModel::launch(int row)
     Item *item = m_items.at(row);
     if (!item->isLauncher()) return;
 
+    // Prefer the source (prefix-free) path for KService resolution so
+    // that KIO::ApplicationLauncherJob derives a valid D-Bus service name.
+    // The dock copies .desktop files with a numeric prefix for ordering;
+    // launching via the prefix-bearing path produces an invalid D-Bus name.
+    QString resolvedPath = item->sourceDesktopFile();
     const QString desktopFile = item->desktopFile();
+    if (resolvedPath.isEmpty() && !desktopFile.isEmpty()) {
+        // Existing launcher without stored source path: try to find the
+        // system service by stripping the ordering prefix from the filename.
+        QFileInfo fi(desktopFile);
+        QString base = fi.completeBaseName();  // "80-org.telegram.desktop"
+        const int dash = base.indexOf(QLatin1Char('-'));
+        if (dash > 0) {
+            const QString prefix = base.left(dash);
+            bool isPrefix;
+            prefix.toInt(&isPrefix);
+            if (isPrefix) {
+                const QString desktopName = base.mid(dash + 1);
+                KService::Ptr sys = KService::serviceByDesktopName(desktopName);
+                if (sys && sys->isValid()) {
+                    resolvedPath = sys->entryPath();
+                }
+            }
+        }
+    }
+    if (resolvedPath.isEmpty()) {
+        resolvedPath = desktopFile;
+    }
     if (!desktopFile.isEmpty()) {
         // Prefer sycoca-cached KService; falls back on an uncached one
         // built directly from the .desktop file so that ApplicationLauncherJob
         // can expand freedesktop.org field codes (%u, %U, %f, %F, %i, …).
-        KService::Ptr service = KService::serviceByDesktopPath(desktopFile);
+        KService::Ptr service = KService::serviceByDesktopPath(resolvedPath);
         if (!service) {
-            service.reset(new KService(desktopFile));
+            service.reset(new KService(resolvedPath));
         }
         if (service && service->isValid()) {
             auto *job = new KIO::ApplicationLauncherJob(service);

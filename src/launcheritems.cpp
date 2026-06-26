@@ -60,6 +60,7 @@ QList<Item *> LauncherItems::load() const
 
         auto *item = new Item(Item::Kind::Launcher, name, icon, exec, 0);
         item->setDesktopFile(path);
+        item->setSourceDesktopFile(df.desktopGroup().readEntry(QStringLiteral("X-KoolDock-Source"), QString()));
         result.append(item);
     }
     return result;
@@ -92,6 +93,10 @@ void LauncherItems::addLauncher(const QString &desktopFile)
         return;
     }
     QFile::setPermissions(dest, QFile::permissions(dest) | QFileDevice::ExeOwner);
+
+    KDesktopFile df(dest);
+    df.desktopGroup().writeEntry(QStringLiteral("X-KoolDock-Source"), desktopFile);
+    df.sync();
     Q_EMIT changed();
 }
 
