@@ -236,6 +236,40 @@ below were only caught this way.
     `m_view->width()`, which blurs the full panel-sized window (commit
     a6c9943).
 
+    **Known remaining limitation (KWin-side, not fixable from our region
+    logic — June 2026 investigation).** A residual intermittent full-screen
+    blur flash survives all of the above. It was traced to KWin itself, not
+    our pushes. Established by experiment, so don't re-derive:
+    - **Blur off → no flash; blur on → flash.** It is entirely the blur
+      mechanism.
+    - Our pushed region is **always sane** — instrumenting every
+      `enableBlurBehind()` showed the long axis never exceeds ~0.5 of the
+      window and the short axis is fixed. KWin blurs the *whole window* on
+      its own; because the window is full-screen, that reads as full-screen.
+    - **Freezing the region (no updates at all) eliminates the flash.** So
+      the trigger is KWin re-applying the blur of a full-screen window when
+      the *region changes* — a one-frame whole-window blur. Happens with
+      auto-hide both on and off.
+    - **Rate does not matter.** Dropping pushes to ~15 fps did not help (and
+      added visible lag), so it is not a "KWin can't keep up" throttle issue.
+    - The window **must stay full-screen** (`maxDockWidth/Height` = screen
+      size): dynamic tooltips would be clipped (badly on vertical edges) and
+      icons must be draggable out of the dock. Shrinking the window to
+      confine the flash is therefore not viable.
+
+    Already ruled out — do **not** chase these again: `m_blurTimer`
+    phase-drift / stale region (its values are fine); the auto-hide slide
+    path (flash occurs with auto-hide off too); push rate.
+
+    **Attempted and failed:** updating the region in place on a persistent
+    `KWayland::Client::Blur` (org_kde_kwin_blur) object instead of
+    `KWindowEffects` — the clean way to avoid re-applying. The path activated
+    and pushed regions but **KWin never rendered the blur** (mixing manual
+    KWayland surface/blur proxies with QtWayland's own surface). Diagnosing
+    it further needs `WAYLAND_DEBUG=1` protocol tracing. Realistic options
+    left: accept the flash, or update the region only when the zoom *settles*
+    (no flash, slight lag during active motion).
+
 ## Settings wiring pattern
 
 Geometry settings (icon sizes, spacing, zoom amount/speed) flow from the
