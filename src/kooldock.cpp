@@ -289,9 +289,10 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
 
 KoolDock::~KoolDock()
 {
-    if (m_view) {
-        m_view->deleteLater();
-    }
+    // m_view and m_spacerView are cleaned up in quit().  If the process
+    // exits through a path that doesn't call quit() (e.g. SIGTERM), the
+    // QPointer auto-nulls when QApplication tears down the remaining
+    // top-level windows.
 }
 
 DockModel *KoolDock::model() const { return m_model; }
@@ -442,6 +443,10 @@ void KoolDock::refreshScreens()
 
 void KoolDock::setupView()
 {
+    // Not parented — cleaned up explicitly in quit() while QApplication
+    // is still alive, so the scene graph teardown doesn't run after
+    // QCoreApplicationPrivate::self has been nulled (which would trigger
+    // "Must construct a QGuiApplication first" errors and prevent exit).
     m_view = new QQuickView();
     m_view->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     m_view->setFlag(Qt::FramelessWindowHint);
@@ -1020,6 +1025,25 @@ void KoolDock::showPreferences()
 
 void KoolDock::quit()
 {
+    // The QML Quit menu item's onTriggered runs inside m_view's signal
+    // handler.  Deleting m_view synchronously here would destroy the
+    // QQuickView (and its QML engine) while we're still on its stack —
+    // "Object destroyed while one of its QML signal handlers is in
+    // progress".  Use deleteLater() instead: the deferred-delete events
+    // are queued before QCoreApplication::quit() sets the exit flag, so
+    // Qt processes them in the same event-loop iteration while
+    // QApplication is still fully alive, then the loop exits cleanly.
+    if (m_view) {
+        auto *root = m_view->rootObject();
+        if (root) {
+            root->setProperty("kooldock", QVariant());
+        }
+        m_view->close();
+        m_view->deleteLater();
+    }
+    if (m_spacerView) {
+        m_spacerView->deleteLater();
+    }
     QCoreApplication::quit();
 }
 
