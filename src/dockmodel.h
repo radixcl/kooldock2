@@ -46,6 +46,8 @@ public:
     // peek. Empty when the row has 0/1 windows or on X11.
     Q_INVOKABLE QStringList windowUuidsForRow(int row) const;
     Q_INVOKABLE void addLauncher(const QString &filePath);
+    // Add a launcher at the model row where it was dropped (row < 0 appends).
+    Q_INVOKABLE void addLauncherAt(const QString &filePath, int row);
     Q_INVOKABLE void removeLauncher(int row);
     Q_INVOKABLE void moveLauncher(int from, int to);
     Q_INVOKABLE bool isLauncher(int row) const;

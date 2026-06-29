@@ -91,6 +91,64 @@ Item {
     // item is in the removal zone, in which case the rest close ranks).
     property int dropTarget: -1
 
+    // External .desktop drag (dragging a new app onto the dock): while one is
+    // hovering, layout() reserves an empty slot at externalDropTarget so the
+    // icons part to preview where the new launcher will land — same "make
+    // space" feel as reordering. -1 / false = no external drag in progress.
+    property bool externalDrag: false
+    property int externalDropTarget: -1
+
+    // Open the insertion-preview gap for an external .desktop drag at the
+    // given cursor position along the long axis (bar-local). Clamped to the
+    // launcher block so the gap only appears among launchers.
+    function externalDragMove(longPosLocal) {
+        const iDist = bar.smallSize + bar.spacing
+        let target = Math.round((longPosLocal - bar.spacing - bar.smallSize / 2) / iDist)
+        let firstL = -1, lastL = -1
+        for (let i = 0; i < listModel.count; i++) {
+            if (listModel.get(i).isLauncher) { if (firstL < 0) firstL = i; lastL = i }
+        }
+        let lo, hi
+        if (firstL < 0) {
+            // No launchers yet: insert right after a leading AppMenu (or at 0).
+            lo = 0
+            for (let i = 0; i < listModel.count; i++)
+                if (listModel.get(i).isAppMenu) lo = i + 1
+            hi = lo
+        } else {
+            lo = firstL; hi = lastL + 1
+        }
+        target = Math.max(lo, Math.min(hi, target))
+        externalClearTimer.stop()
+        bar.externalDrag = true
+        if (target !== bar.externalDropTarget) { bar.externalDropTarget = target; bar.layout() }
+    }
+    // Debounced: moving the drag between adjacent icons fires the old icon's
+    // exit right before the new icon's enter; clearing immediately would flash
+    // the gap shut for a frame. A short timer (cancelled by the next move)
+    // collapses the gap only once the drag has really left the dock.
+    function externalDragClear() { externalClearTimer.restart() }
+    function externalDragReset() {
+        externalClearTimer.stop()
+        if (bar.externalDrag) {
+            bar.externalDrag = false
+            bar.externalDropTarget = -1
+            bar.layout()
+        }
+    }
+    Timer { id: externalClearTimer; interval: 120; onTriggered: bar.externalDragReset() }
+    // True if a drag carries at least one .desktop URL (an app to add, as
+    // opposed to a data file to open-with). Needs the URLs to be readable
+    // mid-drag; if the platform withholds them until drop, this returns false
+    // during motion and the gap simply won't preview (the drop still adds).
+    function dragHasDesktop(drop) {
+        if (!drop.hasUrls) return false
+        const urls = drop.urls
+        for (let i = 0; i < urls.length; i++)
+            if (urls[i].toString().endsWith(".desktop")) return true
+        return false
+    }
+
     // Threshold (px) past the bar's edge for a drag to count as "outside"
     // the dock. Kept within the window's overflow area so removal triggers
     // before the cursor leaves the Wayland surface (where DragHandler stops
@@ -208,6 +266,25 @@ Item {
             // — a moving bar drags the floating icon off the cursor between
             // pointer events.
             bar.contentLength = spacing + N * dIDist
+            bar.lastMaxIconSize = smallSize
+            return
+        }
+
+        // External .desktop drag: lay all N icons out at rest size and reserve
+        // one extra empty slot at externalDropTarget so the row parts to show
+        // where the dropped app will land. N+1 slots, so the pill grows by one.
+        if (bar.externalDrag) {
+            bar.containsMouse = true
+            const dIDist = smallSize + spacing
+            const dt = bar.externalDropTarget
+            let vp = 0
+            for (let r = 0; r < N; r++) {
+                listModel.setProperty(r, "sz", smallSize)
+                if (vp === dt) vp++   // leave the gap slot empty for the incoming icon
+                listModel.setProperty(r, "ipos", spacing + vp * dIDist)
+                vp++
+            }
+            bar.contentLength = spacing + (N + 1) * dIDist
             bar.lastMaxIconSize = smallSize
             return
         }
@@ -504,13 +581,21 @@ Item {
         enabled: true
         keys: ["text/uri-list"]
 
+        // Keep the dock from auto-hiding while a drag hovers the empty bar area
+        // (held still has no movement to refresh the dragActive heartbeat).
+        onContainsDragChanged: { if (bar.kooldock) bar.kooldock.setIconDragOver(containsDrag) }
         onEntered: (drop) => {
             if (bar.kooldock) bar.kooldock.setDragActive(true)
+            if (bar.dragHasDesktop(drop)) bar.externalDragMove(vertical ? drop.y : drop.x)
         }
         onPositionChanged: (drop) => {
             if (bar.kooldock) bar.kooldock.setDragActive(true)
+            if (bar.dragHasDesktop(drop)) bar.externalDragMove(vertical ? drop.y : drop.x)
         }
+        onExited: bar.externalDragClear()
         onDropped: (drop) => {
+            const target = bar.externalDropTarget   // capture before clearing
+            bar.externalDragReset()
             if (drop.hasUrls) {
                 const urls = drop.urls
                 for (let i = 0; i < urls.length; i++) {
@@ -518,7 +603,7 @@ Item {
                     if (url.toString().endsWith(".desktop")) {
                         const localFile = url.toString().replace("file://", "")
                         if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
-                            bar.kooldock.model.addLauncher(localFile)
+                            bar.kooldock.model.addLauncherAt(localFile, target)
                     }
                 }
                 drop.accept()
@@ -601,6 +686,21 @@ Item {
 
             onTrashDropped: (urls) => {
                 if (bar.kooldock) bar.kooldock.trashFiles(urls)
+            }
+
+            // A .desktop dragged over this icon is an app to add, not an
+            // open-with target: forward to the bar's insertion-gap preview
+            // (the bar's own DropArea sits below the icons and never sees it).
+            onExternalDesktopDragMoved: (scenePt) => {
+                const p = bar.mapFromItem(null, scenePt.x, scenePt.y)
+                bar.externalDragMove(vertical ? p.y : p.x)
+            }
+            onExternalDesktopDragExited: bar.externalDragClear()
+            onExternalDesktopDropped: (localFile) => {
+                const target = bar.externalDropTarget
+                bar.externalDragReset()
+                if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
+                    bar.kooldock.model.addLauncherAt(localFile, target)
             }
 
             onTooltipExtentChanged: bar.tooltipExtent = delegateItem.tooltipExtent

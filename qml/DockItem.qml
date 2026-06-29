@@ -73,6 +73,12 @@ Item {
     signal dragMoved(real longPos, real crossPos)
     signal dragEnded(int index, real longPos, real crossPos)
     signal trashDropped(var urls)
+    // A .desktop drag (a new app) is over this icon — forward to the bar so it
+    // shows the insertion gap / adds it, rather than open-with. scenePt is in
+    // scene coords; the bar maps it to its own frame.
+    signal externalDesktopDragMoved(var scenePt)
+    signal externalDesktopDragExited()
+    signal externalDesktopDropped(string localFile)
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     readonly property real iconPad: iconPadding
@@ -228,30 +234,57 @@ Item {
         anchors.fill: parent
         enabled: isLauncher && !isTrash && !isAppMenu
         keys: ["text/uri-list"]
+        // True when the hovering drag is a .desktop (a new app to add) rather
+        // than a data file to open-with. A .desktop is routed up to the bar
+        // (insertion gap + add); the open-with ring is suppressed for it.
+        property bool desktopDrag: false
+        function dragHasDesktop(drop) {
+            if (drop.hasUrls)
+                for (let i = 0; i < drop.urls.length; i++)
+                    if (drop.urls[i].toString().endsWith(".desktop")) return true
+            return false
+        }
         // Keep the dock from auto-hiding while a file is held over this icon
         // (a nested DropArea steals containsDrag from the surface-level one).
         onContainsDragChanged: { if (item.kooldock) item.kooldock.setIconDragOver(containsDrag) }
+        onEntered: (drop) => {
+            desktopDrag = dragHasDesktop(drop)
+            if (desktopDrag) item.externalDesktopDragMoved(mapToItem(null, drop.x, drop.y))
+        }
+        onPositionChanged: (drop) => {
+            desktopDrag = dragHasDesktop(drop)
+            if (desktopDrag) item.externalDesktopDragMoved(mapToItem(null, drop.x, drop.y))
+        }
+        onExited: { desktopDrag = false; item.externalDesktopDragExited() }
         onDropped: (drop) => {
-            if (drop.hasUrls && item.kooldock && item.kooldock.model) {
-                const urls = []
-                for (let i = 0; i < drop.urls.length; i++)
-                    urls.push(drop.urls[i])
-                item.kooldock.model.openUrlsWith(modelIndex, urls)
+            if (drop.hasUrls) {
+                const dataUrls = []
+                for (let i = 0; i < drop.urls.length; i++) {
+                    const u = drop.urls[i].toString()
+                    if (u.endsWith(".desktop"))
+                        item.externalDesktopDropped(u.replace("file://", ""))
+                    else
+                        dataUrls.push(drop.urls[i])
+                }
+                if (dataUrls.length > 0 && item.kooldock && item.kooldock.model)
+                    item.kooldock.model.openUrlsWith(modelIndex, dataUrls)
             }
+            desktopDrag = false
             drop.accepted = true
         }
     }
 
-    // Highlight ring while a file hovers over an open-with target. Bound to
-    // containsDrag (no imperative scale assignment, so it can't strand the
-    // zoom's scale binding the way the trash highlight does).
+    // Highlight ring while a data file hovers over an open-with target. Bound
+    // to containsDrag (no imperative scale assignment, so it can't strand the
+    // zoom's scale binding the way the trash highlight does). Suppressed for a
+    // .desktop drag, which previews as the bar's insertion gap instead.
     Rectangle {
         anchors.fill: parent
         radius: width * 0.2
         color: "transparent"
         border.color: "#cc4d94ff"
         border.width: 3
-        visible: openWithDrop.containsDrag
+        visible: openWithDrop.containsDrag && !openWithDrop.desktopDrag
         z: 6
     }
 

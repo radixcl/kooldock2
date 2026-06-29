@@ -680,6 +680,20 @@ void DockModel::addLauncher(const QString &filePath)
     m_launchers->addLauncher(filePath);
 }
 
+void DockModel::addLauncherAt(const QString &filePath, int row)
+{
+    // Convert the model row (where the gap was previewed) to a launcher-only
+    // index = number of launchers before it. row < 0 → append at the end.
+    int launcherIdx = -1;
+    if (row >= 0) {
+        launcherIdx = 0;
+        for (int i = 0; i < row && i < m_items.size(); i++) {
+            if (m_items.at(i)->isLauncher()) launcherIdx++;
+        }
+    }
+    m_launchers->addLauncherAt(filePath, launcherIdx);
+}
+
 void DockModel::removeLauncher(int row)
 {
     if (row < 0 || row >= m_items.size()) return;
