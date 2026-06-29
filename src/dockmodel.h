@@ -40,6 +40,9 @@ public:
     Q_INVOKABLE void newWindow(int row);
     Q_INVOKABLE QVariantMap itemData(int row) const;
     Q_INVOKABLE QVariantList windowListForRow(int row) const;
+    // KWin UUIDs of every window grouped under this row, for the Window View
+    // peek. Empty when the row has 0/1 windows or on X11.
+    Q_INVOKABLE QStringList windowUuidsForRow(int row) const;
     Q_INVOKABLE void addLauncher(const QString &filePath);
     Q_INVOKABLE void removeLauncher(int row);
     Q_INVOKABLE void moveLauncher(int from, int to);

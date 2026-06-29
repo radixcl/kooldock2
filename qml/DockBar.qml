@@ -75,6 +75,8 @@ Item {
     property color tooltipColor: "#f1f1f1"
     property color tooltipShadowColor: "#000000"
     property bool minimizeAnimation: true
+    property bool windowPeekEnabled: true
+    property int windowPeekDelay: 2000
     property bool trashIsEmpty: true
 
     signal emptyTrash()
@@ -561,6 +563,8 @@ Item {
             tooltipColor: bar.tooltipColor
             tooltipShadowColor: bar.tooltipShadowColor
             minimizeAnimation: bar.minimizeAnimation
+            windowPeekEnabled: bar.windowPeekEnabled
+            windowPeekDelay: bar.windowPeekDelay
             trashIsEmpty: bar.trashIsEmpty
             barFrozen: bar.frozen
 
@@ -659,18 +663,34 @@ Item {
                 bar.dragIndex = -1
                 bar.dropTarget = -1
                 if (isOutside) {
-                    // Dragged out of the dock: play poof, then remove.
+                    // Dropped outside the dock: freeze the icon at the release
+                    // point by pinning x/y/size (breaks their bindings so the
+                    // imminent layout() can't drag it back to its slot), poof
+                    // it there, then remove. Without this it springs home and
+                    // the burst plays inside the dock instead of where the user
+                    // let go. The window is full-screen, so the drop point is
+                    // always on-surface.
+                    delegateItem.x = delegateItem.x
+                    delegateItem.y = delegateItem.y
+                    delegateItem.width = delegateItem.width
+                    delegateItem.height = delegateItem.height
                     delegateItem.playDestroyAnimation()
                     removeTimer.idx = from
                     removeTimer.start()
-                } else if (target >= 0 && target !== from) {
-                    // Dropped inside on a different slot: persist the move.
-                    // The dragged delegate is already floating over the gap
-                    // at `target`, so once the model reorders, normal
-                    // layout() assigns it that same slot and it animates in
-                    // place with no jump.
-                    if (bar.kooldock && bar.kooldock.model)
-                        bar.kooldock.model.moveLauncher(from, target)
+                } else {
+                    // Dropped inside: zero the offset so the icon settles into
+                    // its slot (the item didn't reset it on release).
+                    delegateItem.dragOffsetX = 0
+                    delegateItem.dragOffsetY = 0
+                    delegateItem.willRemove = false
+                    if (target >= 0 && target !== from) {
+                        // Persist the move. The dragged delegate is already
+                        // floating over the gap at `target`, so once the model
+                        // reorders, normal layout() assigns it that same slot
+                        // and it animates in place with no jump.
+                        if (bar.kooldock && bar.kooldock.model)
+                            bar.kooldock.model.moveLauncher(from, target)
+                    }
                 }
                 // Recompute the normal layout (restores zoom / settles the
                 // dragged icon into its slot when no model move happened).
@@ -684,7 +704,9 @@ Item {
     Timer {
         id: removeTimer
         property int idx: -1
-        interval: 450
+        // Outlast the poof burst (poofHideTimer 500ms / the 400ms anims) so
+        // the delegate isn't torn down mid-burst, cutting it off.
+        interval: 500
         onTriggered: {
             if (idx >= 0 && bar.kooldock && bar.kooldock.model)
                 bar.kooldock.model.removeLauncher(idx)

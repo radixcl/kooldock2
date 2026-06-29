@@ -1029,6 +1029,22 @@ QVariantList DockModel::windowListForRow(int row) const
     return list;
 }
 
+QStringList DockModel::windowUuidsForRow(int row) const
+{
+    if (row < 0 || row >= m_items.size() || !m_tasks) return {};
+    Item *item = m_items.at(row);
+    if (item->windowCount() <= 1) return {};
+
+    QStringList uuids;
+    const QList<quint64> ids = item->groupedWindowIds();
+    for (quint64 wid : ids) {
+        const QString uuid = m_tasks->windowUuid(wid);
+        if (!uuid.isEmpty())
+            uuids.append(uuid);
+    }
+    return uuids;
+}
+
 void DockModel::onBadgeChanged(const QString &desktopId, int count, bool visible)
 {
     const int badge = visible ? count : 0;

@@ -94,6 +94,9 @@ public Q_SLOTS:
     Q_INVOKABLE void setPointerDistanceFromEdge(qreal distance);
     Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
     Q_INVOKABLE void showAppMenu();
+    // Open KWin's Window View (present-windows) effect for the given KWin
+    // window UUIDs — the "peek" at a grouped icon's windows. No-op if empty.
+    Q_INVOKABLE void peekWindows(const QStringList &uuids);
     Q_INVOKABLE void openTrash();
     Q_INVOKABLE void trashFiles(const QVariantList &urls);
     Q_INVOKABLE void emptyTrash();

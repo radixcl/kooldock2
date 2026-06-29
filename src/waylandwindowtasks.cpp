@@ -176,6 +176,17 @@ WindowTaskInfo PlasmaWindowManagement::windowInfo(quint64 id) const
     return window ? window->info() : WindowTaskInfo{};
 }
 
+QString PlasmaWindowManagement::uuidForId(quint64 id) const
+{
+    // ponytail: O(n) reverse scan over the uuid->id map. Window counts are
+    // tiny (tens at most); add an id->uuid map if that ever stops holding.
+    for (auto it = m_uuidToId.cbegin(); it != m_uuidToId.cend(); ++it) {
+        if (it.value() == id)
+            return it.key();
+    }
+    return {};
+}
+
 void PlasmaWindowManagement::org_kde_plasma_window_management_window(uint32_t id)
 {
     // Legacy event (protocol < 13): only carries a numeric id, no uuid.
@@ -490,4 +501,9 @@ void WaylandWindowTasks::requestToggleState(quint64 windowId, uint32_t bit)
 PlasmaWindow *WaylandWindowTasks::window(quint64 windowId) const
 {
     return m_management ? m_management->windows().value(windowId) : nullptr;
+}
+
+QString WaylandWindowTasks::windowUuid(quint64 windowId) const
+{
+    return m_management ? m_management->uuidForId(windowId) : QString();
 }

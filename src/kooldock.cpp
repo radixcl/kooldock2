@@ -27,10 +27,13 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <QDirIterator>
 #include <QEventLoop>
 #include <QFile>
 #include <QIcon>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QProcess>
@@ -1138,6 +1141,39 @@ void KoolDock::showAppMenu()
     // on systems where plasmawindowed isn't installed.
     QProcess::startDetached(QStringLiteral("plasmawindowed"),
         {QStringLiteral("org.kde.plasma.kickoff")});
+}
+
+void KoolDock::peekWindows(const QStringList &uuids)
+{
+    if (uuids.isEmpty()) return;
+
+    // The peek fires mid-hold, so our full-screen MouseArea still holds the
+    // pointer grab with the button physically down. When KWin's Window View
+    // takes its own input grab below, the real release lands there and never
+    // reaches us — the grab stays stuck, which strands containsMouse on and
+    // turns the whole transparent surface into a screen-wide input trap.
+    // Replay the lost release so the grabbing MouseArea ends its press
+    // cleanly: delivered outside any item, so it raises released() (dropping
+    // the grab) but not clicked(). Then clamp the input region to the trigger
+    // strip/pill so even a transient stuck hover can't trap the full screen.
+    if (m_view) {
+        const QPointF outside(-1, -1);
+        QMouseEvent release(QEvent::MouseButtonRelease, outside, m_view->mapToGlobal(outside),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(m_view, &release);
+        applyInputMask(true);
+    }
+
+    // KWin's Window View effect: activate(QStringList handles), where the
+    // handles are the windows' internal UUIDs (the same strings the
+    // plasma-window-management protocol announced). Fire-and-forget.
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.kde.KWin"),
+        QStringLiteral("/org/kde/KWin/Effect/WindowView1"),
+        QStringLiteral("org.kde.KWin.Effect.WindowView1"),
+        QStringLiteral("activate"));
+    msg.setArguments({uuids});
+    QDBusConnection::sessionBus().send(msg);
 }
 
 void KoolDock::openTrash()

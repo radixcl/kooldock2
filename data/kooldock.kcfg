@@ -268,6 +268,16 @@
       <label>Animate windows toward the dock icon when minimizing</label>
       <default>true</default>
     </entry>
+    <entry name="windowPeekEnabled" type="Bool">
+      <label>Press and hold a grouped icon to show its windows in KWin's Window View</label>
+      <default>true</default>
+    </entry>
+    <entry name="windowPeekDelay" type="Int">
+      <label>How long to hold the icon (ms) before the Window View opens</label>
+      <default>2000</default>
+      <min>300</min>
+      <max>5000</max>
+    </entry>
 
     <!-- Navigation / K-Menu -->
     <entry name="showKMenu" type="Bool">

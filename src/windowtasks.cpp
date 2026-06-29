@@ -92,6 +92,11 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
     return data;
 }
 
+QString WindowTasks::windowUuid(quint64 windowId) const
+{
+    return m_waylandTasks ? m_waylandTasks->windowUuid(windowId) : QString();
+}
+
 void WindowTasks::requestActivate(quint64 windowId)
 {
     // "Show Desktop" (Super+D) hides windows without un-mapping them, and

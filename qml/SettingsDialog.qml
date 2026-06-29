@@ -456,6 +456,25 @@ Item {
                         checked: settings ? settings.minimizeAnimation : true
                         onToggled: { if (settings) settings.minimizeAnimation = checked }
                     }
+                    CheckBox {
+                        id: windowPeekCheck
+                        text: i18n("Press and hold a grouped icon to peek its windows (Window View)")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.windowPeekEnabled : true
+                        onToggled: { if (settings) settings.windowPeekEnabled = checked }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: windowPeekCheck.checked
+                        Label { text: i18n("Hold delay:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 300; to: 5000; stepSize: 250
+                            value: settings ? settings.windowPeekDelay : 2000
+                            onValueModified: { if (settings) settings.windowPeekDelay = value }
+                        }
+                        Label { text: i18n("ms"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
 
                     Label { text: i18n("Running Indicator"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
                     CheckBox {

@@ -40,6 +40,8 @@ Item {
     readonly property color tooltipColor: settings ? settings.tooltipColor : "#f1f1f1"
     readonly property color tooltipShadowColor: settings ? settings.tooltipShadowColor : "#000000"
     readonly property bool minimizeAnimation: settings ? settings.minimizeAnimation : true
+    readonly property bool windowPeekEnabled: settings ? settings.windowPeekEnabled : true
+    readonly property int windowPeekDelay: settings ? settings.windowPeekDelay : 2000
 
     // Dock geometry along its long and short axes. The long axis is the one
     // icons lay out on (horizontal for Top/BottomEdge, vertical for
@@ -251,6 +253,8 @@ Item {
             tooltipColor: root.tooltipColor
             tooltipShadowColor: root.tooltipShadowColor
             minimizeAnimation: root.minimizeAnimation
+            windowPeekEnabled: root.windowPeekEnabled
+            windowPeekDelay: root.windowPeekDelay
             trashIsEmpty: kooldock ? kooldock.trashIsEmpty : true
             onEmptyTrash: { if (kooldock) kooldock.emptyTrash() }
             // Stable inputs from Main.qml: the window's extent along the dock's
