@@ -156,16 +156,13 @@ void DockModel::activateSpecificWindow(quint64 windowId)
     }
 }
 
-void DockModel::launch(int row)
+// Resolve the KService for a launcher item, or null if none is valid.
+// Prefers the source (prefix-free) path so KIO::ApplicationLauncherJob
+// derives a valid D-Bus service name — the dock copies .desktop files with
+// a numeric ordering prefix, and launching via the prefixed path produces an
+// invalid D-Bus name.
+static KService::Ptr resolveService(Item *item)
 {
-    if (row < 0 || row >= m_items.size()) return;
-    Item *item = m_items.at(row);
-    if (!item->isLauncher()) return;
-
-    // Prefer the source (prefix-free) path for KService resolution so
-    // that KIO::ApplicationLauncherJob derives a valid D-Bus service name.
-    // The dock copies .desktop files with a numeric prefix for ordering;
-    // launching via the prefix-bearing path produces an invalid D-Bus name.
     QString resolvedPath = item->sourceDesktopFile();
     const QString desktopFile = item->desktopFile();
     if (resolvedPath.isEmpty() && !desktopFile.isEmpty()) {
@@ -190,20 +187,31 @@ void DockModel::launch(int row)
     if (resolvedPath.isEmpty()) {
         resolvedPath = desktopFile;
     }
+    if (resolvedPath.isEmpty()) return {};
+    // Prefer sycoca-cached KService; falls back on an uncached one built
+    // directly from the .desktop file so that ApplicationLauncherJob can
+    // expand freedesktop.org field codes (%u, %U, %f, %F, %i, …).
+    KService::Ptr service = KService::serviceByDesktopPath(resolvedPath);
+    if (!service) {
+        service.reset(new KService(resolvedPath));
+    }
+    return (service && service->isValid()) ? service : KService::Ptr();
+}
+
+void DockModel::launch(int row)
+{
+    if (row < 0 || row >= m_items.size()) return;
+    Item *item = m_items.at(row);
+    if (!item->isLauncher()) return;
+
+    if (KService::Ptr service = resolveService(item)) {
+        auto *job = new KIO::ApplicationLauncherJob(service);
+        job->setUiDelegate(nullptr);
+        job->start();
+        return;
+    }
+    const QString desktopFile = item->desktopFile();
     if (!desktopFile.isEmpty()) {
-        // Prefer sycoca-cached KService; falls back on an uncached one
-        // built directly from the .desktop file so that ApplicationLauncherJob
-        // can expand freedesktop.org field codes (%u, %U, %f, %F, %i, …).
-        KService::Ptr service = KService::serviceByDesktopPath(resolvedPath);
-        if (!service) {
-            service.reset(new KService(resolvedPath));
-        }
-        if (service && service->isValid()) {
-            auto *job = new KIO::ApplicationLauncherJob(service);
-            job->setUiDelegate(nullptr);
-            job->start();
-            return;
-        }
         // Last resort: the file may be malformed; read Exec= raw and strip
         // file/URL field codes that KIO::CommandLauncherJob cannot expand.
         KDesktopFile df(desktopFile);
@@ -230,6 +238,27 @@ void DockModel::newWindow(int row)
     Item *item = m_items.at(row);
     if (!item->isLauncher()) return;
     launch(row);
+}
+
+void DockModel::openUrlsWith(int row, const QVariantList &urls)
+{
+    // Open dropped file(s)/URL(s) with this launcher's application
+    // (drag-a-file-onto-an-icon). ApplicationLauncherJob::setUrls feeds them
+    // through the app's Exec= field codes, the native open-with path.
+    if (urls.isEmpty() || row < 0 || row >= m_items.size()) return;
+    Item *item = m_items.at(row);
+    if (!item->isLauncher()) return;
+    KService::Ptr service = resolveService(item);
+    if (!service) return;
+    QList<QUrl> urlList;
+    urlList.reserve(urls.size());
+    for (const QVariant &v : urls) {
+        urlList.append(v.toUrl());
+    }
+    auto *job = new KIO::ApplicationLauncherJob(service);
+    job->setUrls(urlList);
+    job->setUiDelegate(nullptr);
+    job->start();
 }
 
 void DockModel::reload()

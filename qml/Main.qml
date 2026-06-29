@@ -67,6 +67,12 @@ Item {
     HoverHandler { id: hoverHandler }
     readonly property bool containsMouse: dockBar.containsMouse || dockBar.frozen
                                             || (kooldock ? kooldock.dragActive : false)
+                                            // Stays true while a file drag is held still over an icon to aim a
+                                            // drop, unlike the movement-driven dragActive heartbeat which
+                                            // expires after 500ms of stillness and hid the dock. A nested
+                                            // DropArea (the icon's) steals containsDrag from the surface-level
+                                            // one, so the icons report their hover up via kooldock instead.
+                                            || (kooldock ? kooldock.fileDragOver : false)
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
     // Grow the real window to fit whichever tooltip is currently showing
     // (see DockItem.qml's tooltipExtent) instead of clipping long names —

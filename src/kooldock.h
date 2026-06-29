@@ -43,6 +43,10 @@ class KoolDock : public QObject
     Q_PROPERTY(bool autoHide READ autoHide NOTIFY autoHideChanged)
     Q_PROPERTY(bool containsMouse READ containsMouse NOTIFY containsMouseChanged)
     Q_PROPERTY(bool dragActive READ dragActive NOTIFY dragActiveChanged)
+    // True while a file drag is hovering over any dock icon's drop target.
+    // State-based (not the movement heartbeat), so it stays true when the
+    // cursor is held still over an icon to aim a drop.
+    Q_PROPERTY(bool fileDragOver READ fileDragOver NOTIFY fileDragOverChanged)
     Q_PROPERTY(QString themeName READ themeName NOTIFY themeNameChanged)
     Q_PROPERTY(bool trashIsEmpty READ isTrashEmpty NOTIFY trashIsEmptyChanged)
     Q_PROPERTY(bool debugBounds READ debugBounds CONSTANT)
@@ -64,6 +68,11 @@ public:
     bool autoHide() const;
     bool containsMouse() const;
     bool dragActive() const;
+    bool fileDragOver() const { return m_iconDragCount > 0; }
+    // Called by each icon's drop target as a file drag enters/leaves it. Uses
+    // a counter so moving between icons (leave-old after enter-new) never
+    // flickers the aggregate off.
+    Q_INVOKABLE void setIconDragOver(bool over);
     bool isTrashEmpty() const;
     bool debugBounds() const;
     QString version() const;
@@ -111,6 +120,7 @@ Q_SIGNALS:
     void autoHideChanged();
     void containsMouseChanged();
     void dragActiveChanged();
+    void fileDragOverChanged();
     void trashIsEmptyChanged();
     void themeNameChanged();
     void screenNamesChanged();
@@ -161,6 +171,7 @@ private:
     KSharedConfig::Ptr m_config;
     bool m_containsMouse = false;
     bool m_dragActive = false;
+    int m_iconDragCount = 0;
     bool m_dragExpanded = false;
     bool m_debugBounds = false;
     int m_tooltipExtent = 0;

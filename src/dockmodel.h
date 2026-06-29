@@ -38,6 +38,8 @@ public:
     Q_INVOKABLE void activateSpecificWindow(quint64 windowId);
     Q_INVOKABLE void launch(int row);
     Q_INVOKABLE void newWindow(int row);
+    // Open dropped files/URLs with this launcher's app (drag file onto icon).
+    Q_INVOKABLE void openUrlsWith(int row, const QVariantList &urls);
     Q_INVOKABLE QVariantMap itemData(int row) const;
     Q_INVOKABLE QVariantList windowListForRow(int row) const;
     // KWin UUIDs of every window grouped under this row, for the Window View

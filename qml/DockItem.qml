@@ -201,6 +201,7 @@ Item {
         anchors.fill: parent
         enabled: isTrash
         keys: ["text/uri-list"]
+        onContainsDragChanged: { if (item.kooldock) item.kooldock.setIconDragOver(containsDrag) }
         onEntered: (drop) => {
             drop.accepted = true
             item.scale = 1.3
@@ -216,6 +217,42 @@ Item {
             item.scale = 1.0
         }
         onExited: { item.scale = 1.0 }
+    }
+
+    // Open-with drop: drag a file onto a launcher icon to open it with that
+    // app (e.g. a .txt onto KWrite). Active for launchers (incl. fused/
+    // running); trash/appmenu/tasks are excluded. Because this child DropArea
+    // accepts the drop, it doesn't fall through to the bar's add-launcher one.
+    DropArea {
+        id: openWithDrop
+        anchors.fill: parent
+        enabled: isLauncher && !isTrash && !isAppMenu
+        keys: ["text/uri-list"]
+        // Keep the dock from auto-hiding while a file is held over this icon
+        // (a nested DropArea steals containsDrag from the surface-level one).
+        onContainsDragChanged: { if (item.kooldock) item.kooldock.setIconDragOver(containsDrag) }
+        onDropped: (drop) => {
+            if (drop.hasUrls && item.kooldock && item.kooldock.model) {
+                const urls = []
+                for (let i = 0; i < drop.urls.length; i++)
+                    urls.push(drop.urls[i])
+                item.kooldock.model.openUrlsWith(modelIndex, urls)
+            }
+            drop.accepted = true
+        }
+    }
+
+    // Highlight ring while a file hovers over an open-with target. Bound to
+    // containsDrag (no imperative scale assignment, so it can't strand the
+    // zoom's scale binding the way the trash highlight does).
+    Rectangle {
+        anchors.fill: parent
+        radius: width * 0.2
+        color: "transparent"
+        border.color: "#cc4d94ff"
+        border.width: 3
+        visible: openWithDrop.containsDrag
+        z: 6
     }
 
     // DragHandler: starts on press+move (after a small threshold so

@@ -338,6 +338,19 @@ void KoolDock::setDragActive(bool active)
     // shrunk until some unrelated hover transition happened to fix it.
 }
 
+void KoolDock::setIconDragOver(bool over)
+{
+    const bool was = m_iconDragCount > 0;
+    if (over) {
+        m_iconDragCount++;
+    } else if (m_iconDragCount > 0) {
+        m_iconDragCount--;
+    }
+    if ((m_iconDragCount > 0) != was) {
+        Q_EMIT fileDragOverChanged();
+    }
+}
+
 void KoolDock::setDragExpanded(bool expanded)
 {
     if (m_dragExpanded == expanded) return;
