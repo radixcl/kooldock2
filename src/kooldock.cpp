@@ -464,6 +464,8 @@ void KoolDock::setupView()
     // QCoreApplicationPrivate::self has been nulled (which would trigger
     // "Must construct a QGuiApplication first" errors and prevent exit).
     m_view = new QQuickView();
+    // See eventFilter(): quit when the compositor closes this window (logout).
+    m_view->installEventFilter(this);
     m_view->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     m_view->setFlag(Qt::FramelessWindowHint);
     m_view->setFlag(Qt::WindowDoesNotAcceptFocus);
@@ -1037,6 +1039,19 @@ void KoolDock::showPreferences()
         }
     });
     dialog->show();
+}
+
+bool KoolDock::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_view && event->type() == QEvent::Close) {
+        // The compositor (KWin at logout) asked the dock window to close.
+        // Behave like a normal app: shut down completely instead of just
+        // hiding the window and lingering with surfaces still mapped, which
+        // is what stalls the session manager. quit() does the teardown.
+        quit();
+        return true;
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void KoolDock::quit()

@@ -62,6 +62,18 @@ public:
     static KoolDock *instance();
     static void create(QObject *parent, bool showPreferences, bool debugBounds = false);
 
+    // Quit when the compositor asks the dock window to close. On Wayland
+    // logout, KWin sends each toplevel an xdg_toplevel close request; a
+    // normal app (Konsole, KWrite) quits when its last window closes and so
+    // gets out of the session manager's way. The dock sets
+    // quitOnLastWindowClosed(false) (so a stray close never kills it mid-use)
+    // and its surfaces are a privileged plasma-shell Panel plus a layer-shell
+    // spacer the compositor can't even close -- so without this it lingers
+    // and stalls logout. Treat a Close on m_view as "session wants us gone"
+    // and quit() (which tears down both surfaces). Nothing sends a panel a
+    // close during normal use, so day-to-day behaviour is unchanged.
+    bool eventFilter(QObject *watched, QEvent *event) override;
+
     DockModel *model() const;
     WindowActions *windowActions() const;
     Qt::Edge screenEdge() const;
