@@ -40,6 +40,8 @@ Item {
     readonly property color tooltipColor: settings ? settings.tooltipColor : "#f1f1f1"
     readonly property color tooltipShadowColor: settings ? settings.tooltipShadowColor : "#000000"
     readonly property bool minimizeAnimation: settings ? settings.minimizeAnimation : true
+    readonly property bool windowPeekEnabled: settings ? settings.windowPeekEnabled : true
+    readonly property int windowPeekDelay: settings ? settings.windowPeekDelay : 2000
 
     // Dock geometry along its long and short axes. The long axis is the one
     // icons lay out on (horizontal for Top/BottomEdge, vertical for
@@ -65,6 +67,15 @@ Item {
     HoverHandler { id: hoverHandler }
     readonly property bool containsMouse: dockBar.containsMouse || dockBar.frozen
                                             || (kooldock ? kooldock.dragActive : false)
+                                            // Stays true while a file drag is held still over an icon to aim a
+                                            // drop, unlike the movement-driven dragActive heartbeat which
+                                            // expires after 500ms of stillness and hid the dock. A nested
+                                            // DropArea (the icon's) steals containsDrag from the surface-level
+                                            // one, so the icons report their hover up via kooldock instead.
+                                            || (kooldock ? kooldock.fileDragOver : false)
+                                            // Held visible just after an external drop until the cursor moves
+                                            // (hover doesn't resume without motion); cleared below.
+                                            || dockBar.dropPin
     onContainsMouseChanged: { if (kooldock) kooldock.setContainsMouse(containsMouse) }
     // Grow the real window to fit whichever tooltip is currently showing
     // (see DockItem.qml's tooltipExtent) instead of clipping long names —
@@ -88,6 +99,31 @@ Item {
                                   : root.height - hoverHandler.point.position.y))
         : -1
     onPointerDistanceFromEdgeChanged: { if (kooldock) kooldock.setPointerDistanceFromEdge(pointerDistanceFromEdge) }
+
+    // Release the after-drop hold (dockBar.dropPin) only on a GENUINE cursor
+    // move. The DnD end fires one transient hover event at the drop spot; if
+    // we cleared on any hover change it'd clear on that transient (which
+    // doesn't sustain containsMouse) and the dock would hide. So anchor the
+    // position at the first post-drop hover event and clear only once the
+    // cursor has moved past a small threshold from it. (point.position
+    // doesn't update during a DnD, so the first change is the drop-end event.)
+    property point dropAnchor: Qt.point(-1e6, -1e6)
+    property point hoverPos: hoverHandler.point.position
+    Connections {
+        target: dockBar
+        function onDropPinChanged() {
+            if (dockBar.dropPin) root.dropAnchor = Qt.point(-1e6, -1e6)  // arm
+        }
+    }
+    onHoverPosChanged: {
+        if (!dockBar.dropPin) return
+        if (root.dropAnchor.x < -9e5) {
+            root.dropAnchor = root.hoverPos   // first post-drop hover = anchor
+        } else if (Math.hypot(root.hoverPos.x - root.dropAnchor.x,
+                              root.hoverPos.y - root.dropAnchor.y) > 8) {
+            dockBar.dropPin = false           // real motion → hover takes over
+        }
+    }
 
     // Suppress the auto-hide animation on the very first binding pass.
     // `kooldock` is set after setSource() (see kooldock.cpp), so on the first
@@ -251,6 +287,8 @@ Item {
             tooltipColor: root.tooltipColor
             tooltipShadowColor: root.tooltipShadowColor
             minimizeAnimation: root.minimizeAnimation
+            windowPeekEnabled: root.windowPeekEnabled
+            windowPeekDelay: root.windowPeekDelay
             trashIsEmpty: kooldock ? kooldock.trashIsEmpty : true
             onEmptyTrash: { if (kooldock) kooldock.emptyTrash() }
             // Stable inputs from Main.qml: the window's extent along the dock's

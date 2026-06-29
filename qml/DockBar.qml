@@ -75,6 +75,8 @@ Item {
     property color tooltipColor: "#f1f1f1"
     property color tooltipShadowColor: "#000000"
     property bool minimizeAnimation: true
+    property bool windowPeekEnabled: true
+    property int windowPeekDelay: 2000
     property bool trashIsEmpty: true
 
     signal emptyTrash()
@@ -88,6 +90,69 @@ Item {
     // (macOS "make space"). -1 means no reserved gap (idle, or the dragged
     // item is in the removal zone, in which case the rest close ranks).
     property int dropTarget: -1
+
+    // External .desktop drag (dragging a new app onto the dock): while one is
+    // hovering, layout() reserves an empty slot at externalDropTarget so the
+    // icons part to preview where the new launcher will land — same "make
+    // space" feel as reordering. -1 / false = no external drag in progress.
+    property bool externalDrag: false
+    property int externalDropTarget: -1
+    // Set true right after an external drop adds a launcher: the drag keep-
+    // alive ends but the cursor is still over the dock, and hover won't
+    // resume without motion. Main.qml ORs this into containsMouse and clears
+    // it on the next real pointer move, when hover takes over.
+    property bool dropPin: false
+
+    // Open the insertion-preview gap for an external .desktop drag at the
+    // given cursor position along the long axis (bar-local). Clamped to the
+    // launcher block so the gap only appears among launchers.
+    function externalDragMove(longPosLocal) {
+        const iDist = bar.smallSize + bar.spacing
+        let target = Math.round((longPosLocal - bar.spacing - bar.smallSize / 2) / iDist)
+        let firstL = -1, lastL = -1
+        for (let i = 0; i < listModel.count; i++) {
+            if (listModel.get(i).isLauncher) { if (firstL < 0) firstL = i; lastL = i }
+        }
+        let lo, hi
+        if (firstL < 0) {
+            // No launchers yet: insert right after a leading AppMenu (or at 0).
+            lo = 0
+            for (let i = 0; i < listModel.count; i++)
+                if (listModel.get(i).isAppMenu) lo = i + 1
+            hi = lo
+        } else {
+            lo = firstL; hi = lastL + 1
+        }
+        target = Math.max(lo, Math.min(hi, target))
+        externalClearTimer.stop()
+        bar.externalDrag = true
+        if (target !== bar.externalDropTarget) { bar.externalDropTarget = target; bar.layout() }
+    }
+    // Debounced: moving the drag between adjacent icons fires the old icon's
+    // exit right before the new icon's enter; clearing immediately would flash
+    // the gap shut for a frame. A short timer (cancelled by the next move)
+    // collapses the gap only once the drag has really left the dock.
+    function externalDragClear() { externalClearTimer.restart() }
+    function externalDragReset() {
+        externalClearTimer.stop()
+        if (bar.externalDrag) {
+            bar.externalDrag = false
+            bar.externalDropTarget = -1
+            bar.layout()
+        }
+    }
+    Timer { id: externalClearTimer; interval: 120; onTriggered: bar.externalDragReset() }
+    // True if a drag carries at least one .desktop URL (an app to add, as
+    // opposed to a data file to open-with). Needs the URLs to be readable
+    // mid-drag; if the platform withholds them until drop, this returns false
+    // during motion and the gap simply won't preview (the drop still adds).
+    function dragHasDesktop(drop) {
+        if (!drop.hasUrls) return false
+        const urls = drop.urls
+        for (let i = 0; i < urls.length; i++)
+            if (urls[i].toString().endsWith(".desktop")) return true
+        return false
+    }
 
     // Threshold (px) past the bar's edge for a drag to count as "outside"
     // the dock. Kept within the window's overflow area so removal triggers
@@ -210,9 +275,37 @@ Item {
             return
         }
 
+        // External .desktop drag: lay all N icons out at rest size and reserve
+        // one extra empty slot at externalDropTarget so the row parts to show
+        // where the dropped app will land. N+1 slots, so the pill grows by one.
+        if (bar.externalDrag) {
+            bar.containsMouse = true
+            const dIDist = smallSize + spacing
+            const dt = bar.externalDropTarget
+            let vp = 0
+            for (let r = 0; r < N; r++) {
+                listModel.setProperty(r, "sz", smallSize)
+                if (vp === dt) vp++   // leave the gap slot empty for the incoming icon
+                listModel.setProperty(r, "ipos", spacing + vp * dIDist)
+                vp++
+            }
+            bar.contentLength = spacing + (N + 1) * dIDist
+            bar.lastMaxIconSize = smallSize
+            return
+        }
+
         const W = (smallSize + spacing) * zoomRange / 2
         const H = bigSize - smallSize
         const iDist = smallSize + spacing
+
+        // The bar stays centred within the window.  When the mouse first
+        // enters and icons zoom, contentLength grows, shifting the bar
+        // left by half the growth.  Computing localMousePos with rest
+        // contentLength makes the cursor appear left of where it really
+        // is, so the zoom peak lands one slot to the left.  Save the
+        // pre-transition hover state so we can re-run with the corrected
+        // bar position after contentLength is known (see end of layout()).
+        const wasHovering = bar.containsMouse
 
         // Project the cursor onto the bar's [0, contentLength] frame using
         // *last* layout's contentLength (read here, before it's overwritten
@@ -355,6 +448,17 @@ Item {
         // by Main.qml to grow the background pill to hug the icons.
         bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
 
+        // First frame of hover: barNearEdge was computed with the rest
+        // contentLength, which makes localMousePos appear ~(Δlength/2) px
+        // left of the true position.  Re-run with the now-correct zoomed
+        // contentLength so the biggest icon lands under the cursor.  Only
+        // one extra pass — wasHovering is already true in the re-entrant
+        // call so there's no infinite recursion.
+        if (!wasHovering && bar.containsMouse) {
+            layout()
+            return
+        }
+
         // Feeds next frame's cross-axis entry margin above — see the
         // property declaration for why this needs to track the current
         // zoom instead of staying pinned to bigSize.
@@ -482,21 +586,31 @@ Item {
         enabled: true
         keys: ["text/uri-list"]
 
+        // Keep the dock from auto-hiding while a drag hovers the empty bar area
+        // (held still has no movement to refresh the dragActive heartbeat).
+        onContainsDragChanged: { if (bar.kooldock) bar.kooldock.setIconDragOver(containsDrag) }
         onEntered: (drop) => {
             if (bar.kooldock) bar.kooldock.setDragActive(true)
+            if (bar.dragHasDesktop(drop)) bar.externalDragMove(vertical ? drop.y : drop.x)
         }
         onPositionChanged: (drop) => {
             if (bar.kooldock) bar.kooldock.setDragActive(true)
+            if (bar.dragHasDesktop(drop)) bar.externalDragMove(vertical ? drop.y : drop.x)
         }
+        onExited: bar.externalDragClear()
         onDropped: (drop) => {
+            const target = bar.externalDropTarget   // capture before clearing
+            bar.externalDragReset()
             if (drop.hasUrls) {
                 const urls = drop.urls
                 for (let i = 0; i < urls.length; i++) {
                     const url = urls[i]
                     if (url.toString().endsWith(".desktop")) {
                         const localFile = url.toString().replace("file://", "")
-                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
-                            bar.kooldock.model.addLauncher(localFile)
+                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model) {
+                            bar.kooldock.model.addLauncherAt(localFile, target)
+                            bar.dropPin = true
+                        }
                     }
                 }
                 drop.accept()
@@ -541,6 +655,8 @@ Item {
             tooltipColor: bar.tooltipColor
             tooltipShadowColor: bar.tooltipShadowColor
             minimizeAnimation: bar.minimizeAnimation
+            windowPeekEnabled: bar.windowPeekEnabled
+            windowPeekDelay: bar.windowPeekDelay
             trashIsEmpty: bar.trashIsEmpty
             barFrozen: bar.frozen
 
@@ -577,6 +693,23 @@ Item {
 
             onTrashDropped: (urls) => {
                 if (bar.kooldock) bar.kooldock.trashFiles(urls)
+            }
+
+            // A .desktop dragged over this icon is an app to add, not an
+            // open-with target: forward to the bar's insertion-gap preview
+            // (the bar's own DropArea sits below the icons and never sees it).
+            onExternalDesktopDragMoved: (scenePt) => {
+                const p = bar.mapFromItem(null, scenePt.x, scenePt.y)
+                bar.externalDragMove(vertical ? p.y : p.x)
+            }
+            onExternalDesktopDragExited: bar.externalDragClear()
+            onExternalDesktopDropped: (localFile) => {
+                const target = bar.externalDropTarget
+                bar.externalDragReset()
+                if (localFile.length > 0 && bar.kooldock && bar.kooldock.model) {
+                    bar.kooldock.model.addLauncherAt(localFile, target)
+                    bar.dropPin = true
+                }
             }
 
             onTooltipExtentChanged: bar.tooltipExtent = delegateItem.tooltipExtent
@@ -639,18 +772,34 @@ Item {
                 bar.dragIndex = -1
                 bar.dropTarget = -1
                 if (isOutside) {
-                    // Dragged out of the dock: play poof, then remove.
+                    // Dropped outside the dock: freeze the icon at the release
+                    // point by pinning x/y/size (breaks their bindings so the
+                    // imminent layout() can't drag it back to its slot), poof
+                    // it there, then remove. Without this it springs home and
+                    // the burst plays inside the dock instead of where the user
+                    // let go. The window is full-screen, so the drop point is
+                    // always on-surface.
+                    delegateItem.x = delegateItem.x
+                    delegateItem.y = delegateItem.y
+                    delegateItem.width = delegateItem.width
+                    delegateItem.height = delegateItem.height
                     delegateItem.playDestroyAnimation()
                     removeTimer.idx = from
                     removeTimer.start()
-                } else if (target >= 0 && target !== from) {
-                    // Dropped inside on a different slot: persist the move.
-                    // The dragged delegate is already floating over the gap
-                    // at `target`, so once the model reorders, normal
-                    // layout() assigns it that same slot and it animates in
-                    // place with no jump.
-                    if (bar.kooldock && bar.kooldock.model)
-                        bar.kooldock.model.moveLauncher(from, target)
+                } else {
+                    // Dropped inside: zero the offset so the icon settles into
+                    // its slot (the item didn't reset it on release).
+                    delegateItem.dragOffsetX = 0
+                    delegateItem.dragOffsetY = 0
+                    delegateItem.willRemove = false
+                    if (target >= 0 && target !== from) {
+                        // Persist the move. The dragged delegate is already
+                        // floating over the gap at `target`, so once the model
+                        // reorders, normal layout() assigns it that same slot
+                        // and it animates in place with no jump.
+                        if (bar.kooldock && bar.kooldock.model)
+                            bar.kooldock.model.moveLauncher(from, target)
+                    }
                 }
                 // Recompute the normal layout (restores zoom / settles the
                 // dragged icon into its slot when no model move happened).
@@ -664,7 +813,9 @@ Item {
     Timer {
         id: removeTimer
         property int idx: -1
-        interval: 450
+        // Outlast the poof burst (poofHideTimer 500ms / the 400ms anims) so
+        // the delegate isn't torn down mid-burst, cutting it off.
+        interval: 500
         onTriggered: {
             if (idx >= 0 && bar.kooldock && bar.kooldock.model)
                 bar.kooldock.model.removeLauncher(idx)

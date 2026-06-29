@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifndef LAUNCHERITEMS_H
@@ -23,6 +23,8 @@ public:
     public Q_SLOTS:
     void refresh();
     void addLauncher(const QString &desktopFile);
+    // Add a launcher at a specific position in the order (index < 0 appends).
+    void addLauncherAt(const QString &desktopFile, int index);
     void removeLauncher(int index);
     void moveLauncher(int from, int to);
 
@@ -31,6 +33,9 @@ Q_SIGNALS:
 
 private:
     void ensureDefaultLaunchers() const;
+    // Copy a .desktop into the menu dir with a high (end-of-order) prefix and
+    // tag its source; returns the dest filename (sans dir) or empty on failure.
+    QString copyLauncherFile(const QString &desktopFile) const;
     QStringList sortedFiles() const;
     void renumber(const QStringList &orderedPaths);
 

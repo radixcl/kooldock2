@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "windowtasks.h"
@@ -90,6 +90,11 @@ WindowTasks::TaskData WindowTasks::taskData(quint64 windowId) const
     data.fullscreen = info.state() & NET::FullScreen;
     data.shaded = info.state() & NET::Shaded;
     return data;
+}
+
+QString WindowTasks::windowUuid(quint64 windowId) const
+{
+    return m_waylandTasks ? m_waylandTasks->windowUuid(windowId) : QString();
 }
 
 void WindowTasks::requestActivate(quint64 windowId)

@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifndef WAYLANDWINDOWTASKS_H
@@ -62,6 +62,9 @@ public:
 
     QHash<quint64, PlasmaWindow *> windows() const { return m_windows; }
     WindowTaskInfo windowInfo(quint64 id) const;
+    // KWin internal UUID for a window (as the plasma-window-management
+    // protocol announced it) — the handle KWin's Window View effect expects.
+    QString uuidForId(quint64 id) const;
 
     // Create a PlasmaWindow from a uuid. Called from both the
     // window_with_uuid event (newly mapped windows) and from
@@ -157,6 +160,7 @@ public:
     void requestClose(quint64 windowId);
     void requestToggleState(quint64 windowId, uint32_t bit);
     PlasmaWindow *window(quint64 windowId) const;
+    QString windowUuid(quint64 windowId) const;
 
 Q_SIGNALS:
     void windowAdded(quint64 windowId);

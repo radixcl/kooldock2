@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "kooldock.h"
@@ -27,10 +27,13 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QDBusConnection>
+#include <QDBusMessage>
 #include <QDirIterator>
 #include <QEventLoop>
 #include <QFile>
 #include <QIcon>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QProcess>
@@ -70,6 +73,11 @@ protected:
         p.fillRect(QRect(QPoint(0, 0), size()), Qt::transparent);
     }
 };
+
+// Minimum interval between enableBlurBehind() pushes (~30 fps). KWin
+// regenerates the blurred backbuffer on every call and can't keep up at
+// the 60 fps QML drives geometry at; flushBlur() coalesces to this rate.
+constexpr int kBlurIntervalMs = 32;
 } // namespace
 
 static QString resolveFlatpakIcon(const QString &appId)
@@ -195,14 +203,15 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
 
     // Throttle blur region updates: QML pushes new geometry every frame
     // (60 fps) during the zoom animation, but every enableBlurBehind
-    // call tells KWin to regenerate the blurred background — KWin
-    // can't keep up at 60 fps and drops the blur for a frame.  A
-    // single-shot timer restarted by updateBlurRegion (and re-armed
-    // by applyBlur if more updates arrived while waiting) applies the
-    // latest values at most every 32 ms (~30 fps).
+    // call tells KWin to regenerate the blurred background — KWin can't
+    // keep up at 60 fps and drops (or full-screen-flashes) the blur for
+    // a frame.  flushBlur() applies the latest region at most every
+    // 32 ms (~30 fps); this single-shot timer is its trailing-flush
+    // fallback for when rendering goes idle before another frame fires
+    // afterAnimating (see flushBlur()).
     m_blurTimer.setSingleShot(true);
-    m_blurTimer.setInterval(32);
-    connect(&m_blurTimer, &QTimer::timeout, this, &KoolDock::applyBlur);
+    m_blurTimer.setInterval(kBlurIntervalMs);
+    connect(&m_blurTimer, &QTimer::timeout, this, &KoolDock::flushBlur);
 
     m_tooltipShrinkTimer.setSingleShot(true);
     // Tooltip extent is no longer used for window sizing — all tooltip
@@ -283,9 +292,10 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
 
 KoolDock::~KoolDock()
 {
-    if (m_view) {
-        m_view->deleteLater();
-    }
+    // m_view and m_spacerView are cleaned up in quit().  If the process
+    // exits through a path that doesn't call quit() (e.g. SIGTERM), the
+    // QPointer auto-nulls when QApplication tears down the remaining
+    // top-level windows.
 }
 
 DockModel *KoolDock::model() const { return m_model; }
@@ -326,6 +336,19 @@ void KoolDock::setDragActive(bool active)
     // root.containsMouse afterward (it never actually changed from QML's
     // point of view), nothing corrected the mismatch: the window stayed
     // shrunk until some unrelated hover transition happened to fix it.
+}
+
+void KoolDock::setIconDragOver(bool over)
+{
+    const bool was = m_iconDragCount > 0;
+    if (over) {
+        m_iconDragCount++;
+    } else if (m_iconDragCount > 0) {
+        m_iconDragCount--;
+    }
+    if ((m_iconDragCount > 0) != was) {
+        Q_EMIT fileDragOverChanged();
+    }
 }
 
 void KoolDock::setDragExpanded(bool expanded)
@@ -436,6 +459,10 @@ void KoolDock::refreshScreens()
 
 void KoolDock::setupView()
 {
+    // Not parented — cleaned up explicitly in quit() while QApplication
+    // is still alive, so the scene graph teardown doesn't run after
+    // QCoreApplicationPrivate::self has been nulled (which would trigger
+    // "Must construct a QGuiApplication first" errors and prevent exit).
     m_view = new QQuickView();
     m_view->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     m_view->setFlag(Qt::FramelessWindowHint);
@@ -461,6 +488,14 @@ void KoolDock::setupView()
     }
 
     m_view->setResizeMode(QQuickView::SizeRootObjectToView);
+
+    // Drive blur-region pushes from the gui-thread frame callback rather
+    // than a free-running timer: afterAnimating fires once per frame on
+    // the gui thread, after QML animations have advanced the pill
+    // geometry for this frame and before the scene is synced/committed,
+    // so the region we push lands together with the buffer it matches.
+    // flushBlur() rate-limits and dedups; idle frames cost nothing.
+    connect(m_view, &QQuickWindow::afterAnimating, this, &KoolDock::flushBlur);
 
     // Re-apply position/size now that the resize mode above is in effect.
     // QQuickView's default SizeViewToRootObject mode (in force while
@@ -849,12 +884,19 @@ void KoolDock::applyInputMask(bool hidden)
 void KoolDock::applyBlur()
 {
     if (!m_view) return;
-    m_blurDirty = false;
     if (KoolDockSettings::blurBackground()) {
+        // If QML hasn't pushed a blur region yet (m_blurLength == 0),
+        // skip — the fallback to m_view->width() would blur the full
+        // screen for a frame since the window is panel-sized. Leave
+        // m_blurDirty set so a later frame/flush retries.
+        if (m_blurLength <= 0)
+            return;
+        m_blurDirty = false;
         const qreal pos = m_blurPos;
-        const qreal length = m_blurLength > 0 ? m_blurLength : m_view->width();
+        const qreal length = m_blurLength;
         const qreal shortOffset = m_blurShortOffset;
         const int bgHeight = KoolDockSettings::dockHeight();
+        const int blurMargin = KoolDockSettings::blurMargin();
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
         QRectF rect;
         if (vert) {
@@ -864,6 +906,11 @@ void KoolDock::applyBlur()
             const qreal baseY = (screenEdge() == Qt::TopEdge) ? 0 : (m_view->height() - bgHeight);
             rect = QRectF(pos, baseY + shortOffset, length, bgHeight);
         }
+        // Expand the blur region beyond the pill to create a soft halo.
+        // The corner radius grows with the margin so the blur stays
+        // rounded at the same visual proportion.
+        if (blurMargin > 0)
+            rect.adjust(-blurMargin, -blurMargin, blurMargin, blurMargin);
         // Use a rounded-rect path so the blur doesn't extend past the
         // pill's corners (which are transparent).  The QPainterPath →
         // QRegion chain can produce an empty region when integer
@@ -871,18 +918,46 @@ void KoolDock::applyBlur()
         // back to a plain aligned rect in that case so KWin never sees
         // an empty blur region (which it treats as "no blur").
         QPainterPath path;
-        path.addRoundedRect(rect, m_blurRadius, m_blurRadius);
+        path.addRoundedRect(rect, m_blurRadius + blurMargin, m_blurRadius + blurMargin);
         QRegion region(path.toFillPolygon().toPolygon());
         if (region.isEmpty())
             region = QRegion(rect.toAlignedRect());
+        // Skip the call entirely if the region is unchanged — every
+        // enableBlurBehind() makes KWin regenerate the blurred backbuffer,
+        // and churning identical regions is what let it glitch full-screen.
+        if (m_lastBlurState == 1 && region == m_lastBlurRegion)
+            return;
         KWindowEffects::enableBlurBehind(m_view, true, region);
+        m_lastBlurRegion = region;
+        m_lastBlurState = 1;
     } else {
+        m_blurDirty = false;
+        if (m_lastBlurState == 0)
+            return;
         KWindowEffects::enableBlurBehind(m_view, false);
+        m_lastBlurRegion = QRegion();
+        m_lastBlurState = 0;
     }
-    // If QML pushed more updates while we were waiting for this timer
-    // tick, re-arm so we catch up in the next interval.
-    if (m_blurDirty)
-        m_blurTimer.start();
+}
+
+void KoolDock::flushBlur()
+{
+    if (!m_blurDirty) return;
+    // Rate-limit to ~30 fps: KWin can't regenerate the blur every frame.
+    // afterAnimating fires ~60 fps during the zoom animation, so coalesce;
+    // when we're inside the throttle window, arm the timer to retry once
+    // it closes (covers the case where rendering goes idle right after a
+    // change and no further afterAnimating arrives to flush the final
+    // region). Use the no-arg start() so the timer keeps its configured
+    // interval — start(msec) would overwrite it.
+    if (m_blurThrottle.isValid() && m_blurThrottle.elapsed() < kBlurIntervalMs) {
+        if (!m_blurTimer.isActive())
+            m_blurTimer.start();
+        return;
+    }
+    m_blurTimer.stop();
+    applyBlur();
+    m_blurThrottle.restart();
 }
 
 void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius)
@@ -892,6 +967,9 @@ void KoolDock::updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffs
     m_blurShortOffset = shortOffset;
     m_blurRadius = radius;
     m_blurDirty = true;
+    // The flush rides the next afterAnimating frame (the QML change that
+    // called us is already driving a render). Arm the timer only as the
+    // trailing-flush fallback for when no further frame is produced.
     if (!m_blurTimer.isActive())
         m_blurTimer.start();
 }
@@ -902,7 +980,17 @@ void KoolDock::reconfigure()
         applyPanelShell();
     }
     applySpacer();
-    applyBlur();
+    // Don't call applyBlur() directly — a direct call races with QML
+    // property re-evaluation after applyPanelShell()'s window resize,
+    // so m_blurPos/m_blurLength may be stale or zero (producing a
+    // full-screen blur flash).  Arm the throttled timer instead; QML
+    // will push fresh values via updateBlurRegion before it fires.
+    // The edge/size may have changed, so the cached region no longer
+    // describes the same surface — force the next push through the dedup.
+    m_lastBlurState = -1;
+    m_blurDirty = true;
+    if (!m_blurTimer.isActive())
+        m_blurTimer.start();
     Q_EMIT screenEdgeChanged();
     Q_EMIT autoHideChanged();
     Q_EMIT themeNameChanged();
@@ -929,7 +1017,14 @@ void KoolDock::showPreferences()
     dialog->engine()->addImageProvider(QStringLiteral("kicon"), new IconImageProvider());
     dialog->setFlag(Qt::Dialog);
     dialog->setFlag(Qt::WindowStaysOnTopHint);
-    dialog->setResizeMode(QQuickView::SizeViewToRootObject);
+    // SizeRootObjectToView: the window size drives the root item's
+    // width/height, so QML layouts that fill the root adapt when the
+    // user resizes the dialog.  SizeViewToRootObject (the opposite
+    // mode) would let the content dictate the window size, ignoring
+    // manual resizes.
+    dialog->setResizeMode(QQuickView::SizeRootObjectToView);
+    dialog->setMinimumSize(QSize(480, 360));
+    dialog->resize(600, 520);
     dialog->setTitle(i18n("KoolDock Preferences"));
     dialog->rootContext()->setContextObject(new KLocalizedContext(dialog));
     dialog->rootContext()->setContextProperty(QStringLiteral("settings"), KoolDockSettings::self());
@@ -946,6 +1041,25 @@ void KoolDock::showPreferences()
 
 void KoolDock::quit()
 {
+    // The QML Quit menu item's onTriggered runs inside m_view's signal
+    // handler.  Deleting m_view synchronously here would destroy the
+    // QQuickView (and its QML engine) while we're still on its stack —
+    // "Object destroyed while one of its QML signal handlers is in
+    // progress".  Use deleteLater() instead: the deferred-delete events
+    // are queued before QCoreApplication::quit() sets the exit flag, so
+    // Qt processes them in the same event-loop iteration while
+    // QApplication is still fully alive, then the loop exits cleanly.
+    if (m_view) {
+        auto *root = m_view->rootObject();
+        if (root) {
+            root->setProperty("kooldock", QVariant());
+        }
+        m_view->close();
+        m_view->deleteLater();
+    }
+    if (m_spacerView) {
+        m_spacerView->deleteLater();
+    }
     QCoreApplication::quit();
 }
 
@@ -1040,6 +1154,39 @@ void KoolDock::showAppMenu()
     // on systems where plasmawindowed isn't installed.
     QProcess::startDetached(QStringLiteral("plasmawindowed"),
         {QStringLiteral("org.kde.plasma.kickoff")});
+}
+
+void KoolDock::peekWindows(const QStringList &uuids)
+{
+    if (uuids.isEmpty()) return;
+
+    // The peek fires mid-hold, so our full-screen MouseArea still holds the
+    // pointer grab with the button physically down. When KWin's Window View
+    // takes its own input grab below, the real release lands there and never
+    // reaches us — the grab stays stuck, which strands containsMouse on and
+    // turns the whole transparent surface into a screen-wide input trap.
+    // Replay the lost release so the grabbing MouseArea ends its press
+    // cleanly: delivered outside any item, so it raises released() (dropping
+    // the grab) but not clicked(). Then clamp the input region to the trigger
+    // strip/pill so even a transient stuck hover can't trap the full screen.
+    if (m_view) {
+        const QPointF outside(-1, -1);
+        QMouseEvent release(QEvent::MouseButtonRelease, outside, m_view->mapToGlobal(outside),
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(m_view, &release);
+        applyInputMask(true);
+    }
+
+    // KWin's Window View effect: activate(QStringList handles), where the
+    // handles are the windows' internal UUIDs (the same strings the
+    // plasma-window-management protocol announced). Fire-and-forget.
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        QStringLiteral("org.kde.KWin"),
+        QStringLiteral("/org/kde/KWin/Effect/WindowView1"),
+        QStringLiteral("org.kde.KWin.Effect.WindowView1"),
+        QStringLiteral("activate"));
+    msg.setArguments({uuids});
+    QDBusConnection::sessionBus().send(msg);
 }
 
 void KoolDock::openTrash()

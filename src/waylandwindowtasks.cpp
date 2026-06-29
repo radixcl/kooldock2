@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "waylandwindowtasks.h"
@@ -174,6 +174,17 @@ WindowTaskInfo PlasmaWindowManagement::windowInfo(quint64 id) const
 {
     PlasmaWindow *window = m_windows.value(id);
     return window ? window->info() : WindowTaskInfo{};
+}
+
+QString PlasmaWindowManagement::uuidForId(quint64 id) const
+{
+    // ponytail: O(n) reverse scan over the uuid->id map. Window counts are
+    // tiny (tens at most); add an id->uuid map if that ever stops holding.
+    for (auto it = m_uuidToId.cbegin(); it != m_uuidToId.cend(); ++it) {
+        if (it.value() == id)
+            return it.key();
+    }
+    return {};
 }
 
 void PlasmaWindowManagement::org_kde_plasma_window_management_window(uint32_t id)
@@ -490,4 +501,9 @@ void WaylandWindowTasks::requestToggleState(quint64 windowId, uint32_t bit)
 PlasmaWindow *WaylandWindowTasks::window(quint64 windowId) const
 {
     return m_management ? m_management->windows().value(windowId) : nullptr;
+}
+
+QString WaylandWindowTasks::windowUuid(quint64 windowId) const
+{
+    return m_management ? m_management->uuidForId(windowId) : QString();
 }

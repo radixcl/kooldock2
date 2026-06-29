@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifndef DOCKMODEL_H
@@ -38,9 +38,16 @@ public:
     Q_INVOKABLE void activateSpecificWindow(quint64 windowId);
     Q_INVOKABLE void launch(int row);
     Q_INVOKABLE void newWindow(int row);
+    // Open dropped files/URLs with this launcher's app (drag file onto icon).
+    Q_INVOKABLE void openUrlsWith(int row, const QVariantList &urls);
     Q_INVOKABLE QVariantMap itemData(int row) const;
     Q_INVOKABLE QVariantList windowListForRow(int row) const;
+    // KWin UUIDs of every window grouped under this row, for the Window View
+    // peek. Empty when the row has 0/1 windows or on X11.
+    Q_INVOKABLE QStringList windowUuidsForRow(int row) const;
     Q_INVOKABLE void addLauncher(const QString &filePath);
+    // Add a launcher at the model row where it was dropped (row < 0 appends).
+    Q_INVOKABLE void addLauncherAt(const QString &filePath, int row);
     Q_INVOKABLE void removeLauncher(int row);
     Q_INVOKABLE void moveLauncher(int from, int to);
     Q_INVOKABLE bool isLauncher(int row) const;

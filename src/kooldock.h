@@ -1,14 +1,16 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifndef KOOLDOCK_H
 #define KOOLDOCK_H
 
+#include <QElapsedTimer>
 #include <QHash>
 #include <QObject>
 #include <QPointer>
 #include <QQuickView>
+#include <QRegion>
 #include <QSize>
 #include <QTimer>
 
@@ -41,6 +43,10 @@ class KoolDock : public QObject
     Q_PROPERTY(bool autoHide READ autoHide NOTIFY autoHideChanged)
     Q_PROPERTY(bool containsMouse READ containsMouse NOTIFY containsMouseChanged)
     Q_PROPERTY(bool dragActive READ dragActive NOTIFY dragActiveChanged)
+    // True while a file drag is hovering over any dock icon's drop target.
+    // State-based (not the movement heartbeat), so it stays true when the
+    // cursor is held still over an icon to aim a drop.
+    Q_PROPERTY(bool fileDragOver READ fileDragOver NOTIFY fileDragOverChanged)
     Q_PROPERTY(QString themeName READ themeName NOTIFY themeNameChanged)
     Q_PROPERTY(bool trashIsEmpty READ isTrashEmpty NOTIFY trashIsEmptyChanged)
     Q_PROPERTY(bool debugBounds READ debugBounds CONSTANT)
@@ -62,6 +68,11 @@ public:
     bool autoHide() const;
     bool containsMouse() const;
     bool dragActive() const;
+    bool fileDragOver() const { return m_iconDragCount > 0; }
+    // Called by each icon's drop target as a file drag enters/leaves it. Uses
+    // a counter so moving between icons (leave-old after enter-new) never
+    // flickers the aggregate off.
+    Q_INVOKABLE void setIconDragOver(bool over);
     bool isTrashEmpty() const;
     bool debugBounds() const;
     QString version() const;
@@ -92,6 +103,9 @@ public Q_SLOTS:
     Q_INVOKABLE void setPointerDistanceFromEdge(qreal distance);
     Q_INVOKABLE void updateBlurRegion(qreal longPos, qreal longLength, qreal shortOffset, qreal radius);
     Q_INVOKABLE void showAppMenu();
+    // Open KWin's Window View (present-windows) effect for the given KWin
+    // window UUIDs — the "peek" at a grouped icon's windows. No-op if empty.
+    Q_INVOKABLE void peekWindows(const QStringList &uuids);
     Q_INVOKABLE void openTrash();
     Q_INVOKABLE void trashFiles(const QVariantList &urls);
     Q_INVOKABLE void emptyTrash();
@@ -106,6 +120,7 @@ Q_SIGNALS:
     void autoHideChanged();
     void containsMouseChanged();
     void dragActiveChanged();
+    void fileDragOverChanged();
     void trashIsEmptyChanged();
     void themeNameChanged();
     void screenNamesChanged();
@@ -128,6 +143,14 @@ private:
     void applySpacer();
     void applyGeometry();
     void applyBlur();
+    // Pushes the pending blur region to KWin at most once per throttle
+    // interval, driven by QQuickWindow::afterAnimating so each update
+    // rides the same gui-thread frame that produced the matching pill
+    // geometry (rather than a free-running timer phase-drifting against
+    // vsync — the cause of the intermittent full-screen blur flash). The
+    // throttle timer is the trailing-flush fallback for when rendering
+    // goes idle before another frame is produced.
+    void flushBlur();
     void applyInputMask(bool hidden);
     void reconfigure();
     void refreshScreens();
@@ -148,6 +171,7 @@ private:
     KSharedConfig::Ptr m_config;
     bool m_containsMouse = false;
     bool m_dragActive = false;
+    int m_iconDragCount = 0;
     bool m_dragExpanded = false;
     bool m_debugBounds = false;
     int m_tooltipExtent = 0;
@@ -158,6 +182,16 @@ private:
     qreal m_blurShortOffset = 0;
     qreal m_blurRadius = 0;
     bool m_blurDirty = false;
+    // Last region/state actually pushed to KWin, so applyBlur() can skip
+    // redundant enableBlurBehind() calls (each one makes KWin regenerate
+    // the blurred backbuffer; churning it every frame is what made KWin
+    // glitch the blur full-screen for a frame). m_lastBlurState: -1
+    // unknown, 0 disabled, 1 enabled.
+    QRegion m_lastBlurRegion;
+    int m_lastBlurState = -1;
+    // Time since the last enableBlurBehind() push, for the flushBlur()
+    // rate limit (~30 fps — KWin can't regenerate the blur at 60 fps).
+    QElapsedTimer m_blurThrottle;
     QTimer m_hideTimer;
     QTimer m_shrinkTimer;
     QTimer m_tooltipShrinkTimer;

@@ -46,6 +46,8 @@ Item {
             //  BEHAVIOR
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -162,6 +164,8 @@ Item {
             //  APPEARANCE
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -250,6 +254,18 @@ Item {
                         checked: settings ? settings.blurBackground : true
                         onToggled: { if (settings) settings.blurBackground = checked }
                     }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: settings ? settings.blurBackground : false
+                        Label { text: i18n("Blur margin:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 0; to: 200; stepSize: 4
+                            value: settings ? settings.blurMargin : 0
+                            onValueModified: { if (settings) settings.blurMargin = value }
+                        }
+                        Label { text: i18n("px — soft halo beyond pill edges"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
+                    }
 
                     Label { text: i18n("Border"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
                     CheckBox {
@@ -309,6 +325,8 @@ Item {
             //  ICONS
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -401,6 +419,8 @@ Item {
             //  TASKS
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -435,6 +455,25 @@ Item {
                         Layout.leftMargin: 10
                         checked: settings ? settings.minimizeAnimation : true
                         onToggled: { if (settings) settings.minimizeAnimation = checked }
+                    }
+                    CheckBox {
+                        id: windowPeekCheck
+                        text: i18n("Press and hold a grouped icon to peek its windows (Window View)")
+                        Layout.leftMargin: 10
+                        checked: settings ? settings.windowPeekEnabled : true
+                        onToggled: { if (settings) settings.windowPeekEnabled = checked }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: windowPeekCheck.checked
+                        Label { text: i18n("Hold delay:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        SpinBox {
+                            from: 300; to: 5000; stepSize: 250
+                            value: settings ? settings.windowPeekDelay : 2000
+                            onValueModified: { if (settings) settings.windowPeekDelay = value }
+                        }
+                        Label { text: i18n("ms"); opacity: 0.45 }
+                        Item { Layout.fillWidth: true }
                     }
 
                     Label { text: i18n("Running Indicator"); font.bold: true; Layout.topMargin: 14; Layout.bottomMargin: 4 }
@@ -510,6 +549,8 @@ Item {
             //  TOOLTIPS
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width
@@ -527,20 +568,26 @@ Item {
                         Label { text: i18n("Font:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         Button {
                             id: fontButton
+                            // FontDialog works in points; show the point
+                            // size here so the displayed number matches
+                            // what the user sees in the picker.  The
+                            // setting is stored in logical pixels.
                             text: (settings ? settings.tooltipFont : "Sans Serif") +
-                                  " " + (settings ? settings.tooltipSize : 12) + "px"
+                                  " " + (settings ? Math.round(settings.tooltipSize * 3 / 4) : 9) + " pt"
                             onClicked: fontDialog.open()
                         }
                         FontDialog {
                             id: fontDialog
                             title: i18n("Select Tooltip Font")
-                            options: FontDialog.ScalableFonts | FontDialog.MonospacedFonts | FontDialog.ProportionalFonts
                             currentFont.family: settings ? settings.tooltipFont : "Sans Serif"
-                            currentFont.pixelSize: settings ? settings.tooltipSize : 12
+                            // QFontDialog works in point sizes internally;
+                            // selectedFont.pixelSize is always -1.
+                            currentFont.pointSize: settings ? settings.tooltipSize * 3 / 4 : 9
                             onAccepted: {
                                 if (settings) {
                                     settings.tooltipFont = selectedFont.family
-                                    settings.tooltipSize = selectedFont.pixelSize
+                                    // Convert points back to logical pixels (96 dpi).
+                                    settings.tooltipSize = Math.round(selectedFont.pointSize * 4 / 3)
                                 }
                             }
                         }
@@ -652,6 +699,8 @@ Item {
             //  ABOUT
             // =====================================================
             ScrollView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
                 contentWidth: availableWidth
                 ColumnLayout {
                     width: parent.width

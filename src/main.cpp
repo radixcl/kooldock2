@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <KAboutData>
@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
         QString(),
         QStringLiteral("https://gitlab.com/radixcl/kooldock2"),
         QStringLiteral("kooldock2-devel@lists.kde.cl"));
-    aboutData.addAuthor(i18n("Matias Fernandez"), i18n("Original author"), QStringLiteral("radix@kde.cl"));
+    aboutData.addAuthor(i18n("Matias Fernandez"), i18n("Original author"), QStringLiteral("matias.fernandez@gmail.com"));
     aboutData.addAuthor(i18n("Francisco Guidi"), i18n("Original author"), QStringLiteral("francisco@guidi.com"));
     aboutData.addAuthor(i18n("Blase Stanek"), i18n("Development after v0.3"), QStringLiteral("bisiek@op.pl"));
     aboutData.addCredit(i18n("Mauricio Bahamonde"), i18n("Project webmaster"), QStringLiteral("elkrammer@kde.cl"));

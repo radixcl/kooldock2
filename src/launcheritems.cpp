@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "launcheritems.h"
@@ -11,6 +11,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -44,6 +45,9 @@ QList<Item *> LauncherItems::load() const
 
     for (const QString &file : files) {
         const QString path = dir.absoluteFilePath(file);
+        // KConfig requires the executable bit on .desktop files outside
+        // system directories. Ensure existing files have it set.
+        QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
         KDesktopFile df(path);
         const QString name = df.readName();
         const QString icon = df.readIcon();
@@ -56,6 +60,7 @@ QList<Item *> LauncherItems::load() const
 
         auto *item = new Item(Item::Kind::Launcher, name, icon, exec, 0);
         item->setDesktopFile(path);
+        item->setSourceDesktopFile(df.desktopGroup().readEntry(QStringLiteral("X-KoolDock-Source"), QString()));
         result.append(item);
     }
     return result;
@@ -66,10 +71,10 @@ void LauncherItems::refresh()
     Q_EMIT changed();
 }
 
-void LauncherItems::addLauncher(const QString &desktopFile)
+QString LauncherItems::copyLauncherFile(const QString &desktopFile) const
 {
-    // Copy the .desktop file into the dock's menu directory with a
-    // high numeric prefix so it lands at the end of the sort order.
+    // Copy the .desktop file into the dock's menu directory with a high
+    // numeric prefix so it lands at the end of the sort order.
     const QFileInfo srcInfo(desktopFile);
     const QString baseName = srcInfo.completeBaseName();
     const QString suffix = srcInfo.suffix().isEmpty() ? QStringLiteral("desktop") : srcInfo.suffix();
@@ -80,13 +85,39 @@ void LauncherItems::addLauncher(const QString &desktopFile)
         const int prefix = f.section(QLatin1Char('-'), 0, 0).toInt();
         if (prefix >= nextNum) nextNum = prefix + 10;
     }
-    const QString dest = m_menuDir + QStringLiteral("%1-%2.%3").arg(nextNum, 2, 10, QLatin1Char('0')).arg(baseName, suffix);
+    const QString destName = QStringLiteral("%1-%2.%3").arg(nextNum, 2, 10, QLatin1Char('0')).arg(baseName, suffix);
+    const QString dest = m_menuDir + destName;
     if (QFile::exists(dest)) QFile::remove(dest);
     if (!QFile::copy(desktopFile, dest)) {
-        // Fall back to writing a minimal .desktop from scratch if copy
-        // fails (e.g. source not readable).
-        return;
+        // Source not readable, etc.
+        return {};
     }
+    QFile::setPermissions(dest, QFile::permissions(dest) | QFileDevice::ExeOwner);
+
+    KDesktopFile df(dest);
+    df.desktopGroup().writeEntry(QStringLiteral("X-KoolDock-Source"), desktopFile);
+    df.sync();
+    return destName;
+}
+
+void LauncherItems::addLauncher(const QString &desktopFile)
+{
+    if (!copyLauncherFile(desktopFile).isEmpty())
+        Q_EMIT changed();
+}
+
+void LauncherItems::addLauncherAt(const QString &desktopFile, int index)
+{
+    const QString destName = copyLauncherFile(desktopFile);
+    if (destName.isEmpty()) return;
+    // copyLauncherFile lands it last (highest prefix); move it to `index`
+    // and renumber so the saved order matches the drop position.
+    QStringList ordered = sortedFiles();
+    const int from = ordered.indexOf(destName);
+    if (from >= 0 && index >= 0 && index < ordered.size() && index != from) {
+        ordered.move(from, index);
+    }
+    renumber(ordered);
     Q_EMIT changed();
 }
 
@@ -186,6 +217,7 @@ void LauncherItems::ensureDefaultLaunchers() const
         out << QStringLiteral("Type=Application\n");
         out << QStringLiteral("Terminal=false\n");
         file.close();
+        QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
     }
 
     QFile markerFile(marker);

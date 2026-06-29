@@ -135,8 +135,10 @@ below were only caught this way.
    — set via `LayerShellQt::Window::setDesiredSize()`, computed in
    `maxDockWidth()`/`maxDockHeight()` — drives QML's `root.width/height`.
    QML's own `implicitWidth`/`implicitHeight` are inert there. The
-   preferences dialog (`KoolDock::showPreferences()`) uses the opposite
-   mode, where QML's implicit size *does* drive the window. Don't assume a
+   preferences dialog (`KoolDock::showPreferences()`) uses the same mode
+   (`SizeRootObjectToView`) with an explicit `resize()` call for the
+   initial size, so QML layouts that fill the root adapt when the user
+   resizes the dialog. Don't assume a
    QML width/height property controls the window without checking which
    mode applies to that view.
 
@@ -202,6 +204,71 @@ below were only caught this way.
     the fallback is acceptable only for CI artifacts; production builds
     on any distro shipping LayerShellQt ≥ 6.6.4 **must** use
     `setDesiredSize`.
+
+11. **The blur region is pushed to KWin frame-aligned, rate-limited, and
+    deduplicated — never from a free-running timer.** The dock window is
+    full-screen and transparent except for the pill; if KWin ever blurs
+    outside the pill's current bounds you get blurred desktop floating with
+    nothing painted on it — a visible flash, near-full-screen on a wide
+    dock. Two failure modes both produce this:
+    - **Phase drift.** QML animates the pill geometry at 60 fps and pushes
+      the region via `updateBlurRegion()`. If `enableBlurBehind()` runs on
+      an independent `QTimer`, the timer and vsync drift in and out of
+      phase and KWin periodically applies a region that doesn't match the
+      committed buffer for a frame. Fix: `flushBlur()` is driven by
+      `QQuickWindow::afterAnimating` (gui thread, once per frame, *after*
+      QML advanced this frame's geometry and *before* the scene is
+      synced/committed), so the region rides the same frame as its buffer.
+      The `m_blurTimer` survives only as the trailing-flush fallback for
+      when rendering goes idle before another `afterAnimating` fires.
+    - **Regeneration churn.** Every `enableBlurBehind()` makes KWin
+      regenerate the blurred backbuffer; it can't keep up at 60 fps and
+      glitches. `flushBlur()` rate-limits to `kBlurIntervalMs` (~30 fps),
+      and `applyBlur()` skips the call entirely when the computed region
+      equals the last one pushed (`m_lastBlurRegion`/`m_lastBlurState`).
+
+    Don't move the push back onto a bare timer, don't call
+    `enableBlurBehind()` per frame, and don't drop the region dedup.
+    `reconfigure()` must reset `m_lastBlurState = -1` because an edge/size
+    change makes the cached region describe a different surface. A `<= 0`
+    `m_blurLength` (QML hasn't pushed yet) must early-return leaving
+    `m_blurDirty` set so a later frame retries — never fall back to
+    `m_view->width()`, which blurs the full panel-sized window (commit
+    a6c9943).
+
+    **Known remaining limitation (KWin-side, not fixable from our region
+    logic — June 2026 investigation).** A residual intermittent full-screen
+    blur flash survives all of the above. It was traced to KWin itself, not
+    our pushes. Established by experiment, so don't re-derive:
+    - **Blur off → no flash; blur on → flash.** It is entirely the blur
+      mechanism.
+    - Our pushed region is **always sane** — instrumenting every
+      `enableBlurBehind()` showed the long axis never exceeds ~0.5 of the
+      window and the short axis is fixed. KWin blurs the *whole window* on
+      its own; because the window is full-screen, that reads as full-screen.
+    - **Freezing the region (no updates at all) eliminates the flash.** So
+      the trigger is KWin re-applying the blur of a full-screen window when
+      the *region changes* — a one-frame whole-window blur. Happens with
+      auto-hide both on and off.
+    - **Rate does not matter.** Dropping pushes to ~15 fps did not help (and
+      added visible lag), so it is not a "KWin can't keep up" throttle issue.
+    - The window **must stay full-screen** (`maxDockWidth/Height` = screen
+      size): dynamic tooltips would be clipped (badly on vertical edges) and
+      icons must be draggable out of the dock. Shrinking the window to
+      confine the flash is therefore not viable.
+
+    Already ruled out — do **not** chase these again: `m_blurTimer`
+    phase-drift / stale region (its values are fine); the auto-hide slide
+    path (flash occurs with auto-hide off too); push rate.
+
+    **Attempted and failed:** updating the region in place on a persistent
+    `KWayland::Client::Blur` (org_kde_kwin_blur) object instead of
+    `KWindowEffects` — the clean way to avoid re-applying. The path activated
+    and pushed regions but **KWin never rendered the blur** (mixing manual
+    KWayland surface/blur proxies with QtWayland's own surface). Diagnosing
+    it further needs `WAYLAND_DEBUG=1` protocol tracing. Realistic options
+    left: accept the flash, or update the region only when the zoom *settles*
+    (no flash, slight lag during active motion).
 
 ## Settings wiring pattern
 

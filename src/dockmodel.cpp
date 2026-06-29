@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "dockmodel.h"
@@ -23,6 +23,19 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QRegularExpression>
+
+// Strip freedesktop.org field codes (%u, %U, %f, %F, %% etc.)
+// from an Exec= line. KIO::CommandLauncherJob does not expand these,
+// and file/URL codes are N/A when launching from a dock.
+static QString stripExecFieldCodes(const QString &exec)
+{
+    QString s = exec;
+    // Remove single-URL and single-file placeholders (no URL/file in dock context)
+    s.remove(QRegularExpression(QStringLiteral("%[uUfF]")));
+    // Replace %% with literal %
+    s.replace(QStringLiteral("%%"), QStringLiteral("%"));
+    return s.trimmed();
+}
 #include <QStandardPaths>
 
 DockModel::DockModel(WindowTasks *tasks, bool debug, QObject *parent)
@@ -143,32 +156,75 @@ void DockModel::activateSpecificWindow(quint64 windowId)
     }
 }
 
+// Resolve the KService for a launcher item, or null if none is valid.
+// Prefers the source (prefix-free) path so KIO::ApplicationLauncherJob
+// derives a valid D-Bus service name — the dock copies .desktop files with
+// a numeric ordering prefix, and launching via the prefixed path produces an
+// invalid D-Bus name.
+static KService::Ptr resolveService(Item *item)
+{
+    QString resolvedPath = item->sourceDesktopFile();
+    const QString desktopFile = item->desktopFile();
+    if (resolvedPath.isEmpty() && !desktopFile.isEmpty()) {
+        // Existing launcher without stored source path: try to find the
+        // system service by stripping the ordering prefix from the filename.
+        QFileInfo fi(desktopFile);
+        QString base = fi.completeBaseName();  // "80-org.telegram.desktop"
+        const int dash = base.indexOf(QLatin1Char('-'));
+        if (dash > 0) {
+            const QString prefix = base.left(dash);
+            bool isPrefix;
+            prefix.toInt(&isPrefix);
+            if (isPrefix) {
+                const QString desktopName = base.mid(dash + 1);
+                KService::Ptr sys = KService::serviceByDesktopName(desktopName);
+                if (sys && sys->isValid()) {
+                    resolvedPath = sys->entryPath();
+                }
+            }
+        }
+    }
+    if (resolvedPath.isEmpty()) {
+        resolvedPath = desktopFile;
+    }
+    if (resolvedPath.isEmpty()) return {};
+    // Prefer sycoca-cached KService; falls back on an uncached one built
+    // directly from the .desktop file so that ApplicationLauncherJob can
+    // expand freedesktop.org field codes (%u, %U, %f, %F, %i, …).
+    KService::Ptr service = KService::serviceByDesktopPath(resolvedPath);
+    if (!service) {
+        service.reset(new KService(resolvedPath));
+    }
+    return (service && service->isValid()) ? service : KService::Ptr();
+}
+
 void DockModel::launch(int row)
 {
     if (row < 0 || row >= m_items.size()) return;
     Item *item = m_items.at(row);
     if (!item->isLauncher()) return;
 
+    if (KService::Ptr service = resolveService(item)) {
+        auto *job = new KIO::ApplicationLauncherJob(service);
+        job->setUiDelegate(nullptr);
+        job->start();
+        return;
+    }
     const QString desktopFile = item->desktopFile();
     if (!desktopFile.isEmpty()) {
-        KService::Ptr service = KService::serviceByDesktopPath(desktopFile);
-        if (service) {
-            auto *job = new KIO::ApplicationLauncherJob(service);
-            job->setUiDelegate(nullptr);
-            job->start();
-            return;
-        }
+        // Last resort: the file may be malformed; read Exec= raw and strip
+        // file/URL field codes that KIO::CommandLauncherJob cannot expand.
         KDesktopFile df(desktopFile);
         const QString exec = df.desktopGroup().readEntry(QStringLiteral("Exec"), QString());
         if (!exec.isEmpty()) {
-            auto *job = new KIO::CommandLauncherJob(exec);
+            auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(exec));
             job->setUiDelegate(nullptr);
             job->start();
             return;
         }
     }
     if (!item->command().isEmpty()) {
-        auto *job = new KIO::CommandLauncherJob(item->command());
+        auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(item->command()));
         job->setUiDelegate(nullptr);
         job->start();
     }
@@ -182,6 +238,27 @@ void DockModel::newWindow(int row)
     Item *item = m_items.at(row);
     if (!item->isLauncher()) return;
     launch(row);
+}
+
+void DockModel::openUrlsWith(int row, const QVariantList &urls)
+{
+    // Open dropped file(s)/URL(s) with this launcher's application
+    // (drag-a-file-onto-an-icon). ApplicationLauncherJob::setUrls feeds them
+    // through the app's Exec= field codes, the native open-with path.
+    if (urls.isEmpty() || row < 0 || row >= m_items.size()) return;
+    Item *item = m_items.at(row);
+    if (!item->isLauncher()) return;
+    KService::Ptr service = resolveService(item);
+    if (!service) return;
+    QList<QUrl> urlList;
+    urlList.reserve(urls.size());
+    for (const QVariant &v : urls) {
+        urlList.append(v.toUrl());
+    }
+    auto *job = new KIO::ApplicationLauncherJob(service);
+    job->setUrls(urlList);
+    job->setUiDelegate(nullptr);
+    job->start();
 }
 
 void DockModel::reload()
@@ -603,6 +680,66 @@ void DockModel::addLauncher(const QString &filePath)
     m_launchers->addLauncher(filePath);
 }
 
+void DockModel::addLauncherAt(const QString &filePath, int row)
+{
+    // Convert the model row (where the gap was previewed) to a launcher-only
+    // index = number of launchers before it. row < 0 → append at the end.
+    int launcherIdx = -1;
+    if (row >= 0) {
+        launcherIdx = 0;
+        for (int i = 0; i < row && i < m_items.size(); i++) {
+            if (m_items.at(i)->isLauncher()) launcherIdx++;
+        }
+    }
+
+    // Write to disk without the full reload() it would otherwise trigger
+    // (which tears down and rebuilds every delegate — the left-to-right
+    // reflash). Then insert just the new row, the same granular approach
+    // moveLauncher uses. As there, the renumber renames existing launcher
+    // copies on disk so their stored paths go stale, which is tolerated:
+    // launch() uses the X-KoolDock-Source path and remove/move work by index.
+    m_suppressReload = true;
+    m_launchers->addLauncherAt(filePath, launcherIdx);
+    m_suppressReload = false;
+
+    // Pull the freshly-added launcher (at its final order index) out of a
+    // reload of the on-disk list; discard the rest, keep existing items.
+    QList<Item *> launchers = m_launchers->load();
+    if (launchers.isEmpty()) return;
+    int finalIdx = launcherIdx;
+    if (finalIdx < 0 || finalIdx >= launchers.size()) finalIdx = launchers.size() - 1;
+    Item *newItem = launchers.takeAt(finalIdx);
+    qDeleteAll(launchers);
+
+    // Model row = position of the finalIdx-th launcher among m_items, or just
+    // after the last launcher/AppMenu when it lands at the end.
+    int modelRow = -1, seen = 0;
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items.at(i)->isLauncher()) {
+            if (seen == finalIdx) { modelRow = i; break; }
+            seen++;
+        }
+    }
+    if (modelRow < 0) {
+        int after = 0;
+        for (int i = 0; i < m_items.size(); i++)
+            if (m_items.at(i)->isLauncher() || m_items.at(i)->isAppMenu()) after = i + 1;
+        modelRow = after;
+    }
+
+    beginInsertRows({}, modelRow, modelRow);
+    m_items.insert(modelRow, newItem);
+    endInsertRows();
+    updateIndices();
+    Q_EMIT itemInserted(modelRow);
+    Q_EMIT countChanged();
+    Q_EMIT itemsChanged();
+    // ponytail: skips fusing the new launcher with an already-running window
+    // of the same app (a rare "add a launcher for a running app" case). They
+    // show as two icons until the next reload re-fuses them. Add a targeted
+    // fuse here if that combination turns out to matter.
+}
+
 void DockModel::removeLauncher(int row)
 {
     if (row < 0 || row >= m_items.size()) return;
@@ -844,7 +981,7 @@ void DockModel::triggerDesktopAction(int row, const QString &actionId)
     const QString exec = group.readEntry(QStringLiteral("Exec"), QString());
     if (exec.isEmpty()) return;
 
-    auto *job = new KIO::CommandLauncherJob(exec);
+    auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(exec));
     job->setUiDelegate(nullptr);
     job->start();
 }
@@ -979,6 +1116,22 @@ QVariantList DockModel::windowListForRow(int row) const
         list.append(entry);
     }
     return list;
+}
+
+QStringList DockModel::windowUuidsForRow(int row) const
+{
+    if (row < 0 || row >= m_items.size() || !m_tasks) return {};
+    Item *item = m_items.at(row);
+    if (item->windowCount() <= 1) return {};
+
+    QStringList uuids;
+    const QList<quint64> ids = item->groupedWindowIds();
+    for (quint64 wid : ids) {
+        const QString uuid = m_tasks->windowUuid(wid);
+        if (!uuid.isEmpty())
+            uuids.append(uuid);
+    }
+    return uuids;
 }
 
 void DockModel::onBadgeChanged(const QString &desktopId, int count, bool visible)

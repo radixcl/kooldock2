@@ -7,17 +7,97 @@ Qt 6, KDE Frameworks 6, QtQuick and `wlr-layer-shell` (via LayerShellQt).
 
 ## Features
 
-- Parabolic zoom: icons grow as the cursor approaches, following the same
-  magnification curve as the original KoolDock.
-- Launchers and running window tasks merged into a single dock.
-- Auto-hide, with a configurable show delay.
-- Translucent, blurred "glass pill" background that grows/shrinks to hug the
-  current icon sizes.
-- Anchored to any screen edge (bottom, top, left, right) via the Wayland
-  layer-shell protocol.
-- Configurable through a GUI preferences dialog (icon sizes, zoom amount and
-  speed, spacing, blur, task filtering, tooltips).
-- Per-icon context menu (minimize/maximize/close) for running windows.
+### Core
+
+- **Parabolic icon zoom** on hover, matching the original KoolDock
+  magnification curve. Uses continuous integral-based sizing (no discrete
+  wobble) with iterative re-centering so the biggest icon lands under the
+  cursor.
+- **Unified dock model**: pinned launchers and running window tasks merged
+  into a single row.
+- **All four screen edges** (bottom, top, left, right) via Wayland
+  `wlr-layer-shell` (LayerShellQt).
+- **Per-monitor placement** with configurable edge margin (positive to push
+  away from the edge, negative to slide past other panels like the KDE
+  taskbar).
+- **Position** configurable as a percentage along the screen edge.
+- **Single-instance** D-Bus service — launching again opens the running
+  instance.
+
+### Appearance
+
+- **Translucent pill** with configurable background color, opacity, corner
+  radius, and height.
+- **Blur behind** the pill (KWin blur effect), with a configurable margin
+  for a soft halo beyond the edge.
+- **Optional border** with configurable color and width.
+- **Glass pill resizes dynamically** to hug the current (possibly zoomed)
+  icon span.
+- **macOS-style auto-hide**: slides off the screen edge with scale + opacity
+  + translate animation. Configurable show delay and animation speed.
+- **Reserve screen space** like a panel when auto-hide is off (maximized
+  windows won't cover the dock).
+
+### Icons
+
+- **Configurable rest size and zoomed size** (16–128 px / 32–256 px range).
+- **Configurable zoom range**: 4–10 neighbouring icons participate in
+  magnification.
+- **Configurable icon spacing** (0–64 px) and **inner padding** (0–32 px).
+- **Configurable zoom animation speed** (50–1000 ms).
+- **macOS-style click bounce**: icons squash toward the screen edge on click
+  and spring back.
+
+### Tasks & Window Management
+
+- **Show running windows** in the dock alongside launchers (toggleable).
+- **Window grouping**: multiple windows of the same app stacked under one
+  icon, with an indicator dot or numeric badge.
+- **Configurable task dot**: size (0 = hidden, up to 16 px), color, and
+  opacity.
+- **Per-window context menu**: Minimize, Maximize, Keep Above/Below,
+  Fullscreen, Shade, On All Desktops, Close.
+- **New Window** and **per-app Desktop Actions** (e.g. "New Private Window"
+  from LibreWolf).
+- **Press-and-hold grouped icons** to peek windows via KWin's Window View.
+- **Cycle through windows** by repeatedly clicking the icon.
+- **Pin** standalone running tasks to the dock ("Keep in Dock").
+- **Window title submenu** for grouped icons to target a specific window.
+- **Minimize-to-dock animation**: KWin animates the window shrinking toward
+  the dock icon (toggleable).
+- **Task filtering**: current desktop only, minimized only, ignore list.
+- **Notification highlighting**: icon marks when a background window notifies.
+- **Drag file onto a launcher icon** to open it with that app ("open with").
+
+### Launchers
+
+- **Pin/unpin** apps by dragging `.desktop` files onto the dock, or via
+  "Keep in Dock" / "Remove from Dock" in the context menu.
+- **Drag-to-reorder** launcher icons with live insertion-gap preview.
+- **Drag file onto trash icon** to move it to trash.
+- **Drag icon off the dock** to remove it, with a poof burst animation.
+- **AppMenu** (KDE application launcher) as an optional first dock item.
+- **Auto-start on login** via autostart `.desktop` file (configurable).
+
+### Tooltips
+
+- **In-scene tooltips** (macOS-style) that show on hover — part of the dock
+  surface, so the dock stays visible while reading them.
+- **Configurable delay before show** (0–5000 ms) and **auto-hide timeout**
+  (0–10000 ms, 0 = never).
+- **Configurable font**, size, bold/italic, text color, and text shadow color.
+
+### Trash
+
+- **Trash icon** shows current state (empty/full).
+- **Open Trash** and **Empty Trash** in right-click menu.
+
+### Preferences
+
+- **Tabbed GUI preferences dialog** (Behavior, Appearance, Icons, Tasks,
+  Tooltips, About).
+- Settings stored via KConfigXT in `~/.config/kooldockrc`.
+- **Reload** and **Reset** without restarting.
 
 ## Status
 

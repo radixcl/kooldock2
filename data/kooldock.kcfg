@@ -190,6 +190,12 @@
       <label>Apply a blur behind the dock background (requires compositor support)</label>
       <default>true</default>
     </entry>
+    <entry name="blurMargin" type="Int">
+      <label>Extra pixels of blur beyond the pill edges (creates a soft halo). Use 0 to clip exactly to the pill.</label>
+      <default>0</default>
+      <min>0</min>
+      <max>200</max>
+    </entry>
     <entry name="themeName" type="String">
       <label>Name of the KPackage theme used for the background</label>
       <default>default</default>
@@ -261,6 +267,16 @@
     <entry name="minimizeAnimation" type="Bool">
       <label>Animate windows toward the dock icon when minimizing</label>
       <default>true</default>
+    </entry>
+    <entry name="windowPeekEnabled" type="Bool">
+      <label>Press and hold a grouped icon to show its windows in KWin's Window View</label>
+      <default>true</default>
+    </entry>
+    <entry name="windowPeekDelay" type="Int">
+      <label>How long to hold the icon (ms) before the Window View opens</label>
+      <default>2000</default>
+      <min>300</min>
+      <max>5000</max>
     </entry>
 
     <!-- Navigation / K-Menu -->

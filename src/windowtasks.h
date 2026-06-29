@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #ifndef WINDOWTASKS_H
@@ -56,6 +56,9 @@ public:
     QList<quint64> windowIds() const;
     quint64 activeWindow() const;
     TaskData taskData(quint64 windowId) const;
+    // KWin internal UUID for a window — empty on X11 (Window View is keyed
+    // by these UUIDs, which only the Wayland backend tracks).
+    QString windowUuid(quint64 windowId) const;
 
     void requestActivate(quint64 windowId);
     void requestToggleState(quint64 windowId, uint32_t bit);
