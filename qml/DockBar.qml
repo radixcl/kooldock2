@@ -97,6 +97,11 @@ Item {
     // space" feel as reordering. -1 / false = no external drag in progress.
     property bool externalDrag: false
     property int externalDropTarget: -1
+    // Set true right after an external drop adds a launcher: the drag keep-
+    // alive ends but the cursor is still over the dock, and hover won't
+    // resume without motion. Main.qml ORs this into containsMouse and clears
+    // it on the next real pointer move, when hover takes over.
+    property bool dropPin: false
 
     // Open the insertion-preview gap for an external .desktop drag at the
     // given cursor position along the long axis (bar-local). Clamped to the
@@ -602,8 +607,10 @@ Item {
                     const url = urls[i]
                     if (url.toString().endsWith(".desktop")) {
                         const localFile = url.toString().replace("file://", "")
-                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
+                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model) {
                             bar.kooldock.model.addLauncherAt(localFile, target)
+                            bar.dropPin = true
+                        }
                     }
                 }
                 drop.accept()
@@ -699,8 +706,10 @@ Item {
             onExternalDesktopDropped: (localFile) => {
                 const target = bar.externalDropTarget
                 bar.externalDragReset()
-                if (localFile.length > 0 && bar.kooldock && bar.kooldock.model)
+                if (localFile.length > 0 && bar.kooldock && bar.kooldock.model) {
                     bar.kooldock.model.addLauncherAt(localFile, target)
+                    bar.dropPin = true
+                }
             }
 
             onTooltipExtentChanged: bar.tooltipExtent = delegateItem.tooltipExtent

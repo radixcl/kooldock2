@@ -691,7 +691,53 @@ void DockModel::addLauncherAt(const QString &filePath, int row)
             if (m_items.at(i)->isLauncher()) launcherIdx++;
         }
     }
+
+    // Write to disk without the full reload() it would otherwise trigger
+    // (which tears down and rebuilds every delegate — the left-to-right
+    // reflash). Then insert just the new row, the same granular approach
+    // moveLauncher uses. As there, the renumber renames existing launcher
+    // copies on disk so their stored paths go stale, which is tolerated:
+    // launch() uses the X-KoolDock-Source path and remove/move work by index.
+    m_suppressReload = true;
     m_launchers->addLauncherAt(filePath, launcherIdx);
+    m_suppressReload = false;
+
+    // Pull the freshly-added launcher (at its final order index) out of a
+    // reload of the on-disk list; discard the rest, keep existing items.
+    QList<Item *> launchers = m_launchers->load();
+    if (launchers.isEmpty()) return;
+    int finalIdx = launcherIdx;
+    if (finalIdx < 0 || finalIdx >= launchers.size()) finalIdx = launchers.size() - 1;
+    Item *newItem = launchers.takeAt(finalIdx);
+    qDeleteAll(launchers);
+
+    // Model row = position of the finalIdx-th launcher among m_items, or just
+    // after the last launcher/AppMenu when it lands at the end.
+    int modelRow = -1, seen = 0;
+    for (int i = 0; i < m_items.size(); i++) {
+        if (m_items.at(i)->isLauncher()) {
+            if (seen == finalIdx) { modelRow = i; break; }
+            seen++;
+        }
+    }
+    if (modelRow < 0) {
+        int after = 0;
+        for (int i = 0; i < m_items.size(); i++)
+            if (m_items.at(i)->isLauncher() || m_items.at(i)->isAppMenu()) after = i + 1;
+        modelRow = after;
+    }
+
+    beginInsertRows({}, modelRow, modelRow);
+    m_items.insert(modelRow, newItem);
+    endInsertRows();
+    updateIndices();
+    Q_EMIT itemInserted(modelRow);
+    Q_EMIT countChanged();
+    Q_EMIT itemsChanged();
+    // ponytail: skips fusing the new launcher with an already-running window
+    // of the same app (a rare "add a launcher for a running app" case). They
+    // show as two icons until the next reload re-fuses them. Add a targeted
+    // fuse here if that combination turns out to matter.
 }
 
 void DockModel::removeLauncher(int row)
