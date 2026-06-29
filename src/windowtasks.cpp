@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2003, 2006 KoolDock team
-// SPDX-FileCopyrightText: 2025 Matias Fernandez <radix@kde.cl>
+// SPDX-FileCopyrightText: 2025 Matias Fernandez <matias.fernandez@gmail.com>
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "windowtasks.h"
