@@ -6,6 +6,9 @@
 #include <KCrash>
 #include <KDBusService>
 #include <KLocalizedString>
+#include <KSignalHandler>
+
+#include <csignal>
 
 #include <QApplication>
 #include <QCommandLineOption>
@@ -96,6 +99,25 @@ int main(int argc, char *argv[])
                      });
 
     KoolDock::create(&app, parser.isSet(optionsOption), parser.isSet(debugBoundsOption));
+
+    // Quit cleanly when the session ends. KoolDock's main window is a
+    // privileged org_kde_plasma_shell Panel (AlwaysVisible) and the spacer a
+    // wlr-layer-shell surface — neither is a normal xdg_toplevel the
+    // compositor can ask to close, and Qt's Wayland plugin implements no
+    // session management, so without this the surfaces stay mapped and Plasma
+    // logout stalls on KoolDock until it's force-killed. KSignalHandler
+    // delivers SIGTERM/SIGINT (what Plasma/systemd send at logout) safely on
+    // the event loop; quit() tears down both surfaces and exits.
+    KSignalHandler::self()->watchSignal(SIGTERM);
+    KSignalHandler::self()->watchSignal(SIGINT);
+    QObject::connect(KSignalHandler::self(), &KSignalHandler::signalReceived,
+                     &app, [](int /*signal*/) {
+                         if (KoolDock::instance()) {
+                             KoolDock::instance()->quit();
+                         } else {
+                             qApp->quit();
+                         }
+                     });
 
     return app.exec();
 }
