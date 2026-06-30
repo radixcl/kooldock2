@@ -106,6 +106,25 @@ zoom/centering math, and window sizing have all had real bugs found and
 fixed during the port; see [AGENTS.md](AGENTS.md) for the invariants that
 keep them working if you're changing this code.
 
+## Installing
+
+### From the APT repository (Ubuntu 26.04 "resolute")
+
+Tagged releases are published to a GPG-signed APT repository hosted on GitLab
+Pages. Add the key and source, then install:
+
+```sh
+curl -fsSL https://radixcl.gitlab.io/kooldock2/kooldock.gpg.key \
+  | sudo gpg --dearmor -o /usr/share/keyrings/kooldock.gpg
+echo "deb [signed-by=/usr/share/keyrings/kooldock.gpg] https://radixcl.gitlab.io/kooldock2 resolute main" \
+  | sudo tee /etc/apt/sources.list.d/kooldock2.list
+sudo apt update
+sudo apt install kooldock2
+```
+
+Updates then arrive through `apt upgrade` like any other package. To uninstall
+the source: `sudo rm /etc/apt/sources.list.d/kooldock2.list /usr/share/keyrings/kooldock.gpg`.
+
 ## Requirements
 
 - Qt 6.6 or newer: Core, Gui, Quick, QuickControls2, Widgets, WaylandClient
@@ -149,6 +168,26 @@ Command-line options:
 - `-o`, `--options` — open the preferences window on start.
 - `-k`, `--kill` — quit any already-running instance (the app is a
   single-instance D-Bus service).
+
+## Releasing (maintainers)
+
+The CI pipeline builds a `.deb` on every push to `dev`/`main`, and on **tags**
+it additionally publishes that package to the signed APT repo on GitLab Pages
+(the `pages` job in `.gitlab-ci.yml`, using `reprepro`). To cut a release:
+
+1. One-time setup (per project):
+   - Generate a **passphraseless** signing key (a dedicated repo key, not a
+     personal one): `gpg --quick-generate-key "KoolDock2 Repo <you@…>" ed25519 sign never`.
+   - Add two CI/CD variables (Settings → CI/CD → Variables):
+     `GPG_PRIVATE_KEY` (type **File**, the armored private key) and
+     `GPG_KEY_ID` (the key's fingerprint).
+   - Enable Pages for the project.
+2. Bump `VERSION` in `CMakeLists.txt`, commit, then push an annotated tag
+   (e.g. `git tag -a v0.0.6 -m … && git push origin v0.0.6`).
+
+The repo's distribution metadata is templated in
+`reprepro/conf/distributions.in`; the target Ubuntu release is the single
+`UBUNTU_CODENAME` variable in `.gitlab-ci.yml`.
 
 ## Configuring
 

@@ -11,6 +11,7 @@
 
 stages:
   - build
+  - deploy
 
 variables:
   DEBIAN_FRONTEND: noninteractive
@@ -84,3 +85,42 @@ build:ubuntu:
     - cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
     - cmake --build build --parallel $(nproc)
     - cd build && cpack -G DEB
+
+# ── APT repository on GitLab Pages ────────────────────────────
+# Publishes the built .deb into a signed APT repo served at
+#   https://<namespace>.gitlab.io/<project>/
+# Runs only on tags (releases). Requires two CI/CD variables:
+#   GPG_PRIVATE_KEY  (File)     ASCII-armored private signing key, no passphrase
+#   GPG_KEY_ID       (Variable) the signing key's id/fingerprint
+# The matching public key is published at the repo root as kooldock.gpg.key.
+#
+# History note: the pool/db are kept in CI cache (best-effort on shared
+# runners) so older versions accumulate. For guaranteed retention across
+# releases, persist reprepro/db and reprepro/pool in the Generic Package
+# Registry instead of the cache.
+pages:
+  stage: deploy
+  image: ubuntu:${UBUNTU_CODENAME}
+  needs: ["build:ubuntu"]
+  rules:
+    - if: $CI_COMMIT_TAG
+  cache:
+    key: apt-repo
+    paths:
+      - reprepro/db
+      - reprepro/pool
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq reprepro gnupg gettext-base
+    - gpg --batch --import "$GPG_PRIVATE_KEY"
+  script:
+    - export UBUNTU_CODENAME GPG_KEY_ID
+    - envsubst '$UBUNTU_CODENAME $GPG_KEY_ID'
+        < reprepro/conf/distributions.in > reprepro/conf/distributions
+    - reprepro -b reprepro includedeb "$UBUNTU_CODENAME" build/*.deb
+    - mkdir -p public
+    - cp -a reprepro/dists reprepro/pool public/
+    - gpg --batch --armor --export "$GPG_KEY_ID" > public/kooldock.gpg.key
+  artifacts:
+    paths:
+      - public

@@ -1,0 +1,16 @@
+# reprepro distribution definition for the KoolDock2 APT repository.
+#
+# This is a TEMPLATE: the `pages` CI job fills the ${...} placeholders with
+# envsubst and writes the result to conf/distributions (which is gitignored).
+#   ${UBUNTU_CODENAME}  the target Ubuntu release codename (e.g. resolute)
+#   ${GPG_KEY_ID}       id/fingerprint of the CI signing key (GPG_KEY_ID var)
+#
+# To publish for an additional Ubuntu release, add another stanza below with a
+# different Codename (and build a .deb on that release).
+Origin: KoolDock2
+Label: KoolDock2
+Codename: ${UBUNTU_CODENAME}
+Architectures: amd64
+Components: main
+Description: KoolDock2 packages for Ubuntu ${UBUNTU_CODENAME}
+SignWith: ${GPG_KEY_ID}
