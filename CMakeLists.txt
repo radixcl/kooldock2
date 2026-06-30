@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(kooldock2 VERSION 0.0.5 LANGUAGES CXX C)
+project(kooldock2 VERSION 0.0.6 LANGUAGES CXX C)
 
 set(PROJECT_BUG_ADDRESS "https://gitlab.com/radixcl/kooldock2/issues")
 
