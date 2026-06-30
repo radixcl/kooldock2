@@ -114,9 +114,9 @@ Tagged releases are published to a GPG-signed APT repository hosted on GitLab
 Pages. Add the key and source, then install:
 
 ```sh
-curl -fsSL https://radixcl.gitlab.io/kooldock2/kooldock.gpg.key \
+curl -fsSL https://kooldock2-80fe0f.gitlab.io/kooldock.gpg.key \
   | sudo gpg --dearmor -o /usr/share/keyrings/kooldock.gpg
-echo "deb [signed-by=/usr/share/keyrings/kooldock.gpg] https://radixcl.gitlab.io/kooldock2 resolute main" \
+echo "deb [signed-by=/usr/share/keyrings/kooldock.gpg] https://kooldock2-80fe0f.gitlab.io resolute main" \
   | sudo tee /etc/apt/sources.list.d/kooldock2.list
 sudo apt update
 sudo apt install kooldock2
