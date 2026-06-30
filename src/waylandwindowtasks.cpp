@@ -3,6 +3,8 @@
 
 #include "waylandwindowtasks.h"
 
+#include "iconthemelock.h"
+
 #include <QDebug>
 #include <QGuiApplication>
 #include <QIcon>
@@ -434,12 +436,17 @@ WaylandWindowTasks::TaskData WaylandWindowTasks::taskData(quint64 windowId) cons
     // "wayland" as the themed icon name, which isn't a real icon).
     // The appId is typically the desktop file name (e.g. "firefox",
     // "librewolf") which QIcon::fromTheme can resolve.
-    if (!info.iconName.isEmpty() && QIcon::hasThemeIcon(info.iconName)) {
-        data.iconName = info.iconName;
-    } else if (!info.appId.isEmpty() && QIcon::hasThemeIcon(info.appId)) {
-        data.iconName = info.appId;
-    } else {
-        data.iconName = info.iconName.isEmpty() ? info.appId : info.iconName;
+    {
+        // QIcon::hasThemeIcon shares KIconLoader with the QML icon provider's
+        // worker thread; serialize so they never hit it concurrently.
+        QMutexLocker iconLock(&iconThemeMutex());
+        if (!info.iconName.isEmpty() && QIcon::hasThemeIcon(info.iconName)) {
+            data.iconName = info.iconName;
+        } else if (!info.appId.isEmpty() && QIcon::hasThemeIcon(info.appId)) {
+            data.iconName = info.appId;
+        } else {
+            data.iconName = info.iconName.isEmpty() ? info.appId : info.iconName;
+        }
     }
     data.minimized = info.state & QtWayland::org_kde_plasma_window_management::state_minimized;
     data.active = info.state & QtWayland::org_kde_plasma_window_management::state_active;

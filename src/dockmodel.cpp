@@ -3,6 +3,7 @@
 
 #include "dockmodel.h"
 
+#include "iconthemelock.h"
 #include "item.h"
 #include "kooldocksettings.h"
 #include "launcheritems.h"
@@ -920,6 +921,10 @@ QString DockModel::resolveIconName(const QString &appId, const QString &waylandI
                 return desktopIcon;
         }
     }
+
+    // QIcon::hasThemeIcon shares KIconLoader with the QML icon provider's
+    // worker thread; serialize so they never hit it concurrently.
+    QMutexLocker iconLock(&iconThemeMutex());
 
     // No .desktop file or its Icon= was empty — use the compositor-provided
     // themed icon name if it resolves in the current icon theme.

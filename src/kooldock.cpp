@@ -4,6 +4,8 @@
 
 #include "kooldock.h"
 
+#include "iconthemelock.h"
+
 #include "dockmodel.h"
 #include "kooldocksettings.h"
 #include "version.h"
@@ -127,6 +129,8 @@ public:
     IconImageProvider() : QQuickImageProvider(Pixmap) {}
     QPixmap requestPixmap(const QString &id, QSize *size, const QSize &requestedSize) override
     {
+        // Runs on a QtQuick worker thread; KIconLoader is not thread-safe.
+        QMutexLocker iconLock(&iconThemeMutex());
         QIcon icon = QIcon::fromTheme(id);
         if (icon.isNull()) {
             const QString lower = id.toLower();
