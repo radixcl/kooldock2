@@ -74,8 +74,18 @@ set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Matias Fernandez <matias.fernandez@gmail.com>")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_CONTACT "matias.fernandez@gmail.com")
+# Shared-library deps (libqt6*, libkf6*, layer-shell, …) are derived from the
+# linked ELF by dpkg-shlibdeps. Hand-listing them is what broke 0.0.6: in
+# Debian/Ubuntu these libraries are split per-component with different names
+# (e.g. libkf6configcore6, libkf6kiocore6 — there is no "libkf6config6" or
+# "qt6-base" binary package), so the guessed names were uninstallable.
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# Only runtime-loaded pieces that aren't linked into the binary need listing
+# by hand: the QML modules the UI imports (QtQml, QtQuick, Controls, Dialogs,
+# Effects, Layouts, Window + the KDE QQC2 style) and the Wayland platform
+# plugin. shlibdeps cannot see these because nothing links them.
 set(CPACK_DEBIAN_PACKAGE_DEPENDS
-    "qt6-base (>=6.6), qt6-declarative (>=6.6), qt6-wayland, libkf6config6, libkf6coreaddons6, libkf6windowsystem6, libkf6kio6, libkf6i18n6, libkwaylandclient6, liblayershellqtinterface6, qml6-module-qtquick-controls, qml6-module-qtquick-effects"
+    "qt6-wayland, qml6-module-qtqml, qml6-module-qtquick, qml6-module-qtquick-controls, qml6-module-qtquick-dialogs, qml6-module-qtquick-effects, qml6-module-qtquick-layouts, qml6-module-qtquick-window, qml6-module-org-kde-desktop"
 )
 set(CPACK_DEBIAN_PACKAGE_SECTION "kde")
 set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://gitlab.com/radixcl/kooldock2")
