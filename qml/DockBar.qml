@@ -568,6 +568,20 @@ Item {
     Component.onCompleted: refreshItems()
     onKooldockChanged: refreshItems()
     onGlobalMousePosChanged: { if (!bar.frozen) layout() }
+    // globalMousePos (long axis) and globalCrossPos (short axis) are fed by two
+    // separate bindings in Main.qml, both keyed off hoverHandler.hovered. On a
+    // hover *enter* (hovered false→true) they don't update atomically: whichever
+    // binding QML re-evaluates first fires its change handler while the other is
+    // still at its not-hovering sentinel (-100000). If only onGlobalMousePosChanged
+    // ran layout(), an enter where globalMousePos updates first would compute the
+    // cross-axis check against a stale -100000 crossPos (→ containsMouse stays
+    // false), and nothing would re-run layout() once crossPos caught up. Usually
+    // continuous motion hides this (the next move re-runs layout with both fresh),
+    // but after a press-and-hold Window View peek the cursor re-enters the thin
+    // trigger strip with no sustained motion, so the dock never latched on and
+    // stayed stuck hidden (autohide) / un-zoomed (non-autohide). Re-run layout()
+    // on cross-axis changes too so the enter resolves regardless of binding order.
+    onGlobalCrossPosChanged: { if (!bar.frozen) layout() }
     onWindowExtentChanged: { if (!bar.frozen) layout() }
     // Geometry settings changed (Apply/OK in the preferences dialog) — sizes
     // feed into every icon's rest size in the model, so go through

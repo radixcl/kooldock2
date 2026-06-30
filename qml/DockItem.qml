@@ -161,44 +161,55 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
-        // Arm the press-and-hold peek for grouped icons; peekTimer fires
-        // mid-hold. A real drag (DragHandler going active) or a release
-        // cancels it first.
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+        // Press-and-hold arms the peek timer for grouped icons.
+        // The peek fires on *release* after the hold duration, so the
+        // release event is delivered normally — no phantom button state,
+        // no stuck MouseArea grab, no input-mask timing issues.
+        // Middle-button click fires the peek immediately.
         onPressed: mouse => {
             item.peekFired = false
+            peekTimer.peekArmed = false
             if (mouse.button === Qt.LeftButton && windowPeekEnabled
                     && (isTask || isRunning) && windowCount > 1)
                 peekTimer.restart()
         }
-        onReleased: peekTimer.stop()
-        onCanceled: peekTimer.stop()
+        onReleased: mouse => {
+            if (peekTimer.peekArmed) {
+                peekTimer.peekArmed = false
+                item.peekFired = true
+                if (item.kooldock && item.kooldock.model)
+                    item.kooldock.peekWindows(item.kooldock.model.windowUuidsForRow(modelIndex))
+            }
+            peekTimer.stop()
+        }
+        onCanceled: { peekTimer.peekArmed = false; peekTimer.stop() }
         onClicked: mouse => {
             if (dragActive || item.peekFired) return
             if (mouse.button === Qt.RightButton)
                 item.contextMenuRequested(mapToItem(null, mouse.x, mouse.y))
-            else {
+            else if (mouse.button === Qt.MiddleButton && windowPeekEnabled
+                     && (isTask || isRunning) && windowCount > 1) {
+                item.peekFired = true
+                if (item.kooldock && item.kooldock.model)
+                    item.kooldock.peekWindows(item.kooldock.model.windowUuidsForRow(modelIndex))
+            } else {
                 item.playClickBounce()
                 item.activated()
             }
         }
     }
 
-    // Press-and-hold detection for the Window View peek. Fires mid-hold (the
-    // original UX). The grab hazard — our full-screen MouseArea still holding
-    // the pointer grab while KWin's Window View takes its own, which would
-    // strand containsMouse on and trap the whole screen — is handled in
-    // KoolDock::peekWindows: it replays the lost release to drop our grab
-    // cleanly and clamps the input region to the trigger strip.
+    // Press-and-hold timer for the Window View peek. Arms a flag after
+    // windowPeekDelay ms of holding the left button. The actual peek fires
+    // on *release* (see onReleased above), so the release event is delivered
+    // to Qt normally and no phantom button state results.
     Timer {
         id: peekTimer
+        property bool peekArmed: false
         interval: windowPeekDelay
         repeat: false
-        onTriggered: {
-            item.peekFired = true
-            if (item.kooldock && item.kooldock.model)
-                item.kooldock.peekWindows(item.kooldock.model.windowUuidsForRow(modelIndex))
-        }
+        onTriggered: { peekArmed = true }
     }
 
     // Trash drop area: accept file drops to move files to trash.
