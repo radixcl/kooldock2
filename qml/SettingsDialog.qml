@@ -173,6 +173,46 @@ Item {
                     Label { text: i18n("Background"); font.bold: true; Layout.topMargin: 8; Layout.bottomMargin: 4 }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Type:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        ComboBox {
+                            id: bgTypeCombo
+                            Layout.preferredWidth: 160
+                            model: [i18n("Solid color"), i18n("Theme image")]
+                            currentIndex: (settings && !settings.solidBackground) ? 1 : 0
+                            onActivated: { if (settings) settings.solidBackground = (currentIndex === 0) }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        Label { text: i18n("Theme:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
+                        ComboBox {
+                            id: bgThemeCombo
+                            Layout.preferredWidth: 160
+                            enabled: settings ? !settings.solidBackground : false
+                            // Re-queried whenever it gains focus or is reopened, so themes the
+                            // user just dropped into the folder show up without restarting.
+                            model: kooldock ? kooldock.availableThemes() : []
+                            currentIndex: {
+                                if (!settings) return 0
+                                var i = model.indexOf(settings.themeName)
+                                return i < 0 ? 0 : i
+                            }
+                            onActivated: { if (settings) settings.themeName = model[currentIndex] }
+                            onPressedChanged: { if (pressed && kooldock) model = kooldock.availableThemes() }
+                        }
+                        Button {
+                            text: i18n("Open folder…")
+                            icon.name: "folder-open"
+                            // Always enabled — adding theme files is useful even
+                            // before switching the dock into theme mode.
+                            onClicked: { if (kooldock) kooldock.openThemesDir() }
+                        }
+                        Item { Layout.fillWidth: true }
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true; spacing: 6
+                        enabled: settings ? settings.solidBackground : true
                         Label { text: i18n("Color:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         Rectangle {
                             id: bgSwatch

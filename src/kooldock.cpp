@@ -379,6 +379,60 @@ void KoolDock::unsetMinimizedGeometry(quint64 windowId)
 QString KoolDock::version() const { return QString::fromLatin1(KOOLDOCK_VERSION); }
 QString KoolDock::themeName() const { return KoolDockSettings::themeName(); }
 
+// Where users drop their own background themes. Each theme is a directory
+// holding a background-center.png (the old *-left/-right cap slices are no
+// longer used: the dock pill is a centered, rounded, floating shape, so the
+// rounded ends the caps provided are produced by masking the stretched
+// center to the pill's corner radius instead).
+static QString userThemesDir()
+{
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
+           + QStringLiteral("/kooldock2/backgrounds");
+}
+
+QStringList KoolDock::availableThemes() const
+{
+    QStringList names;
+    // Built-ins compiled into the qrc.
+    const QDir builtinDir(QStringLiteral(":/backgrounds"));
+    for (const QString &name : builtinDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+        if (QFile::exists(QStringLiteral(":/backgrounds/%1/background-center.png").arg(name)))
+            names << name;
+    }
+    // User themes — added on top, deduplicated (a user theme of the same
+    // name shadows the built-in in themeBackgroundUrl()).
+    const QDir userDir(userThemesDir());
+    if (userDir.exists()) {
+        for (const QString &name : userDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+            if (QFile::exists(userDir.filePath(name + QStringLiteral("/background-center.png")))
+                && !names.contains(name))
+                names << name;
+        }
+    }
+    return names;
+}
+
+QString KoolDock::themeBackgroundUrl(const QString &name) const
+{
+    if (name.isEmpty())
+        return QString();
+    // User dir takes precedence so a user can override a built-in by name.
+    const QString userFile = userThemesDir() + QStringLiteral("/%1/background-center.png").arg(name);
+    if (QFile::exists(userFile))
+        return QUrl::fromLocalFile(userFile).toString();
+    const QString builtin = QStringLiteral(":/backgrounds/%1/background-center.png").arg(name);
+    if (QFile::exists(builtin))
+        return QStringLiteral("qrc") + builtin;
+    return QString();
+}
+
+void KoolDock::openThemesDir() const
+{
+    const QString dir = userThemesDir();
+    QDir().mkpath(dir);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
 QStringList KoolDock::screenNames() const
 {
     return m_screenNames;
@@ -1010,12 +1064,21 @@ void KoolDock::reload()
 
 void KoolDock::showPreferences()
 {
+    // Already open — just raise it instead of stacking another dialog
+    // (and leaking the old one).
+    if (m_prefsDialog) {
+        m_prefsDialog->raise();
+        m_prefsDialog->requestActivate();
+        return;
+    }
+
     // The dock is a full-screen panel surface sitting above normal
     // windows. Make it transparent to input while the dialog is open
     // so the user can interact with it. Restore when the dialog closes.
     m_view->setFlag(Qt::WindowTransparentForInput, true);
 
     auto *dialog = new QQuickView();
+    m_prefsDialog = dialog;
     // The dialog has its own QML engine, so it needs its own "kicon"
     // image provider — the one on m_view's engine isn't shared. Without
     // this, image://kicon/... sources (e.g. the app logo on the About
@@ -1037,9 +1100,15 @@ void KoolDock::showPreferences()
     dialog->rootContext()->setContextProperty(QStringLiteral("kooldock"), this);
     dialog->setSource(QUrl(QStringLiteral("qrc:/qml/SettingsDialog.qml")));
 
-    QObject::connect(dialog, &QWindow::visibleChanged, this, [this](bool visible) {
+    QObject::connect(dialog, &QWindow::visibleChanged, this, [this, dialog](bool visible) {
         if (!visible) {
             m_view->setFlag(Qt::WindowTransparentForInput, false);
+            // Destroy the dialog on close rather than leaving it leaked-but-
+            // hidden: a lingering dialog's QML bindings (which reference this
+            // KoolDock via the "kooldock" context property) would re-run when
+            // we are destroyed at exit and crash. deleteLater() so we don't
+            // delete the view from inside its own signal emission.
+            dialog->deleteLater();
         }
     });
     dialog->show();
@@ -1068,6 +1137,15 @@ void KoolDock::quit()
     // are queued before QCoreApplication::quit() sets the exit flag, so
     // Qt processes them in the same event-loop iteration while
     // QApplication is still fully alive, then the loop exits cleanly.
+    // Tear the Preferences dialog down first if it is open: its QML bindings
+    // reference this object via the "kooldock" context property, so it must
+    // not outlive us (its ComboBox model bindings would re-run on our
+    // destroyed() signal and crash in the QML delegate model).
+    if (m_prefsDialog) {
+        m_prefsDialog->close();
+        delete m_prefsDialog;
+        m_prefsDialog = nullptr;
+    }
     if (m_view) {
         auto *root = m_view->rootObject();
         if (root) {

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 
 Item {
     id: root
@@ -21,6 +22,14 @@ Item {
     readonly property int count: kooldock && kooldock.model ? kooldock.model.count : 0
     readonly property real bgOpacity: settings ? settings.backgroundOpacity / 100 : 0.7
     readonly property color bgColor: settings ? settings.backgroundColor : "#1e1e2e"
+    // Background mode: solid color (the Rectangle fill) vs a PNG theme image.
+    readonly property bool solidBg: settings ? settings.solidBackground : true
+    readonly property string themeName: settings ? settings.themeName : "default"
+    readonly property bool useTheme: !solidBg && themeBgUrl !== ""
+    // Resolve the theme name to an image URL once (file:// for user themes,
+    // qrc:/ for built-ins). Empty when the theme is missing — falls back to
+    // the solid fill so the dock never renders blank.
+    readonly property string themeBgUrl: (kooldock && !solidBg) ? kooldock.themeBackgroundUrl(themeName) : ""
     readonly property int cornerRadius: settings ? settings.cornerRadius : 18
     readonly property bool showBorders: settings ? settings.showBorders : false
     readonly property color borderColor: settings ? settings.borderColor : "#b1c4de"
@@ -185,9 +194,13 @@ Item {
         y: vertical ? (parent.height - height) / 2
                     : (edge === Qt.TopEdge ? 0 : (parent.height - height))
         radius: root.cornerRadius
-        color: Qt.rgba(root.bgColor.r, root.bgColor.g, root.bgColor.b, root.bgOpacity)
+        // In theme mode the fill is transparent: the PNG (which may itself be
+        // translucent) is the only thing painted, so its alpha — not an opaque
+        // colour behind it — is what the desktop blur shows through.
+        color: root.useTheme ? "transparent"
+                             : Qt.rgba(root.bgColor.r, root.bgColor.g, root.bgColor.b, root.bgOpacity)
         border.color: root.borderColor
-        border.width: root.showBorders ? root.borderWidth : 0
+        border.width: (root.showBorders && !root.useTheme) ? root.borderWidth : 0
         clip: false
 
         opacity: autoHide ? (containsMouse ? 1.0 : 0.0) : 1.0
@@ -250,6 +263,59 @@ Item {
         }
         onXChanged: bg.updateBlur()
         onYChanged: bg.updateBlur()
+
+        // PNG theme background. The slices are laid out in the texture's
+        // native horizontal-bar orientation inside this container, then the
+        // whole container is rotated 90° for a vertical dock — that carries
+        // the texture's decorative top/bottom borders onto the pill's
+        // left/right edges. Sits beneath DockBar (declared after it).
+        Item {
+            id: themeLayer
+            visible: root.useTheme
+            anchors.centerIn: parent
+            // Logical (pre-rotation) size: long axis along x, short axis (the
+            // fixed bgHeight band) along y. Rotating 90° swaps the footprint
+            // to match bg when the dock is vertical.
+            width:  vertical ? bg.height : bg.width
+            height: vertical ? bg.width  : bg.height
+            rotation: vertical ? 90 : 0
+
+            BorderImage {
+                id: themeImage
+                anchors.fill: parent
+                source: root.themeBgUrl
+                // Preserve the few px of decorative border on the short-axis
+                // edges (top/bottom of the texture) while the middle stretches.
+                // No horizontal caps — the centre tile is what we stretch along
+                // the bar, replacing the old *-left/-right.png slices.
+                border { left: 0; right: 0; top: 8; bottom: 8 }
+                horizontalTileMode: BorderImage.Stretch
+                verticalTileMode: BorderImage.Stretch
+                smooth: true
+                // Rendered via the MultiEffect below, not directly.
+                visible: false
+                layer.enabled: true
+            }
+            // Rounded-rectangle mask: clips the stretched texture to the pill's
+            // corner radius, reproducing the rounded ends the dropped cap
+            // slices used to provide.
+            Rectangle {
+                id: themeMask
+                anchors.fill: parent
+                radius: bg.radius
+                visible: false
+                layer.enabled: true
+            }
+            MultiEffect {
+                anchors.fill: parent
+                source: themeImage
+                maskEnabled: true
+                maskSource: themeMask
+                // The opacity slider multiplies the PNG's own alpha rather
+                // than overriding it, so a translucent theme stays translucent.
+                opacity: root.bgOpacity
+            }
+        }
 
         DockBar {
             id: dockBar

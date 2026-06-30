@@ -5,5 +5,17 @@
     <file alias="qml/DockBar.qml">../qml/DockBar.qml</file>
     <file alias="qml/DockItem.qml">../qml/DockItem.qml</file>
     <file alias="qml/SettingsDialog.qml">../qml/SettingsDialog.qml</file>
+    <!-- Background themes: only the center slice is bundled. The old
+         *-left.png / *-right.png cap slices are intentionally dropped — the
+         dock pill rounds itself via cornerRadius, so the stretched center
+         masked to that radius reproduces the rounded ends the caps gave. -->
+    <file alias="backgrounds/border-black/background-center.png">../backgrounds/border-black/background-center.png</file>
+    <file alias="backgrounds/border-white/background-center.png">../backgrounds/border-white/background-center.png</file>
+    <file alias="backgrounds/crystal/background-center.png">../backgrounds/crystal/background-center.png</file>
+    <file alias="backgrounds/default/background-center.png">../backgrounds/default/background-center.png</file>
+    <file alias="backgrounds/fadeout/background-center.png">../backgrounds/fadeout/background-center.png</file>
+    <file alias="backgrounds/fadeout2/background-center.png">../backgrounds/fadeout2/background-center.png</file>
+    <file alias="backgrounds/fadeout3/background-center.png">../backgrounds/fadeout3/background-center.png</file>
+    <file alias="backgrounds/osx/background-center.png">../backgrounds/osx/background-center.png</file>
   </qresource>
 </RCC>

@@ -89,6 +89,18 @@ public:
     bool debugBounds() const;
     QString version() const;
     QString themeName() const;
+    // Background themes: the built-in set is compiled into the qrc under
+    // :/backgrounds/<name>/; users can drop extra themes (a directory with a
+    // background-center.png) into ~/.local/share/kooldock2/backgrounds/.
+    // availableThemes() merges both, user dir taking precedence on name
+    // clashes. themeBackgroundUrl() resolves a theme name to the URL QML
+    // feeds the BorderImage (file:// for a user theme, qrc:/ for a built-in;
+    // empty if the theme has no center image).
+    Q_INVOKABLE QStringList availableThemes() const;
+    Q_INVOKABLE QString themeBackgroundUrl(const QString &name) const;
+    // Create (if missing) and open the user themes directory in the file
+    // manager, so the user can drop in their own background-center.png themes.
+    Q_INVOKABLE void openThemesDir() const;
     QStringList screenNames() const;
     QString screenName() const;
     void setScreenName(const QString &name);
@@ -172,6 +184,12 @@ private:
     int maxDockShortSize() const;
 
     QPointer<QQuickView> m_view;
+    // The Preferences dialog. Owned here so it is destroyed when closed
+    // (instead of leaking, hidden) and torn down in quit() — otherwise a
+    // leaked dialog outlives this object and its ComboBox model bindings
+    // (e.g. model: kooldock.availableThemes()) re-run on our destroyed()
+    // signal, calling setModel() on a half-dismantled delegate model → crash.
+    QPointer<QQuickView> m_prefsDialog;
     KWayland::Client::PlasmaShell *m_plasmaShell = nullptr;
     KWayland::Client::PlasmaShellSurface *m_panelSurface = nullptr;
     QSize m_desiredPanelSize;
