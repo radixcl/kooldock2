@@ -87,9 +87,24 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
 else()
     set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "${CMAKE_SYSTEM_PROCESSOR}")
 endif()
-# Architectures: amd64, arm64, etc.
-set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
-set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}_${CPACK_PACKAGE_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}")
+# Distro codename (e.g. "resolute" for Ubuntu 26.04 LTS), read from the build
+# host's /etc/os-release so the .deb names its target release by codename
+# rather than leaving it implicit. Empty when the file is absent (non-Linux),
+# in which case the codename segment is omitted.
+set(DISTRO_CODENAME "")
+if(EXISTS "/etc/os-release")
+    file(STRINGS "/etc/os-release" _os_codename_line REGEX "^VERSION_CODENAME=")
+    if(_os_codename_line)
+        string(REGEX REPLACE "^VERSION_CODENAME=\"?([^\"]*)\"?$" "\\1" DISTRO_CODENAME "${_os_codename_line}")
+    endif()
+endif()
+
+# .deb filename: kooldock2_<version>[_<codename>]_<arch>.deb
+if(DISTRO_CODENAME)
+    set(CPACK_DEBIAN_FILE_NAME "${PROJECT_NAME}_${PROJECT_VERSION}_${DISTRO_CODENAME}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+else()
+    set(CPACK_DEBIAN_FILE_NAME "${PROJECT_NAME}_${PROJECT_VERSION}_${CPACK_DEBIAN_PACKAGE_ARCHITECTURE}.deb")
+endif()
 include(CPack)
 
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)

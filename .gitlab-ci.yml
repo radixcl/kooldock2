@@ -1,5 +1,5 @@
 # GitLab CI pipeline for KoolDock2
-# Builds on Ubuntu 26.04 and produces a .deb package artifact.
+# Builds on Ubuntu (resolute / 26.04 LTS) and produces a .deb package artifact.
 #
 # To use this pipeline:
 # 1. Enable CI/CD in your GitLab project settings
@@ -15,20 +15,23 @@ stages:
 variables:
   DEBIAN_FRONTEND: noninteractive
   GIT_SUBMODULE_STRATEGY: recursive
+  # Target Ubuntu release by codename (resolute = 26.04 LTS). Used for both
+  # the build image tag and the artifact name; bump this one value to retarget.
+  UBUNTU_CODENAME: resolute
 
-# ── Ubuntu 26.04 LTS / KDE Plasma 6 / Qt 6 ────────────────────
+# ── Ubuntu resolute (26.04 LTS) / KDE Plasma 6 / Qt 6 ─────────
 # Compatible with Kubuntu 26.04+ / KDE Plasma 6 / Qt 6 ≥ 6.6.
 # Runs on every push to dev/main and on version tags.
 
 build:ubuntu:
   stage: build
-  image: ubuntu:26.04
+  image: ubuntu:${UBUNTU_CODENAME}
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "main"
     - if: $CI_COMMIT_BRANCH == "dev"
   artifacts:
-    name: "kooldock2-${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}-amd64"
+    name: "kooldock2-${CI_COMMIT_TAG:-${CI_COMMIT_SHORT_SHA}}-${UBUNTU_CODENAME}-amd64"
     paths:
       - build/*.deb
     expire_in: 90 days
