@@ -824,6 +824,19 @@ Item {
                 // dragged icon into its slot when no model move happened).
                 bar.layout()
             }
+
+            // Delegate destroyed mid-drag (model reload tore the Repeater
+            // down): clean up the drag state that dragEnded would have —
+            // a wedged dragIndex force-holds containsMouse true and keeps
+            // the window's input mask opened on the full screen (see the
+            // signal's comment in DockItem.qml).
+            onDragAborted: (idx) => {
+                if (bar.dragIndex !== idx) return
+                bar.dragIndex = -1
+                bar.dropTarget = -1
+                if (bar.kooldock) bar.kooldock.setDragExpanded(false)
+                bar.layout()
+            }
         }
     }
 

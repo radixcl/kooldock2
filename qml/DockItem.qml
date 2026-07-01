@@ -72,6 +72,14 @@ Item {
     signal dragStarted(int index)
     signal dragMoved(real longPos, real crossPos)
     signal dragEnded(int index, real longPos, real crossPos)
+    // Emitted when the delegate is destroyed mid-drag (a model reload can
+    // tear the whole Repeater down while an icon is being dragged). The
+    // DragHandler dies with the delegate, so onActiveChanged never fires
+    // dragEnded — without this the bar's dragIndex wedges >= 0, layout()
+    // force-holds containsMouse true, and setDragExpanded(true) keeps the
+    // window's input region opened on the full screen: the invisible dock
+    // then swallows every click on the desktop.
+    signal dragAborted(int index)
     signal trashDropped(var urls)
     // A .desktop drag (a new app) is over this icon — forward to the bar so it
     // shows the insertion gap / adds it, rather than open-with. scenePt is in
@@ -362,6 +370,8 @@ Item {
 
     onItemPosChanged: if (dragActive) recenterDrag()
     onItemSizeChanged: if (dragActive) recenterDrag()
+
+    Component.onDestruction: if (dragActive) dragAborted(modelIndex)
 
     // The bar's x/y track contentLength (Main.qml centres it), which changes
     // when the drag layout drops magnification — recentre so the dragged

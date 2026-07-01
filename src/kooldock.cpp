@@ -358,7 +358,11 @@ void KoolDock::setDragExpanded(bool expanded)
 {
     if (m_dragExpanded == expanded) return;
     m_dragExpanded = expanded;
-    // Window is always full-screen; drag tracking works anywhere.
+    // Re-derive the input region: an icon drag needs the full surface so
+    // the DragHandler keeps tracking the cursor into the removal zone
+    // (outside the hover band applyInputMask() normally restricts input
+    // to); everything else goes back to the band/strip/pill.
+    applyInputMask(!m_containsMouse);
 }
 
 void KoolDock::setMinimizedGeometry(quint64 windowId, int x, int y, int w, int h)
@@ -881,15 +885,60 @@ static constexpr int TRIGGER_HEIGHT = 8;
 void KoolDock::applyInputMask(bool hidden)
 {
     if (!m_view) return;
-    if (!hidden) {
-        // Full input: clear any mask so the entire surface receives
-        // pointer and touch events.
-        m_view->setMask(QRegion());
-        return;
-    }
     const int w = maxDockWidth();
     const int h = maxDockHeight();
     const int bgHeight = KoolDockSettings::dockHeight();
+
+    if (!hidden) {
+        // An icon drag in flight is the ONLY state that opens input on the
+        // whole surface: the DragHandler must keep tracking the cursor into
+        // the removal zone, well outside the dock band. It's bounded by the
+        // drag itself — setDragExpanded(false) on release re-derives the
+        // mask below.
+        if (m_dragExpanded) {
+            m_view->setMask(QRegion());
+            return;
+        }
+        // Hovering: accept input over the dock band only — the zoomed
+        // pill's worst-case long-axis span by the icon zone's short-axis
+        // extent. NEVER the whole surface: with a full-screen input region
+        // the pointer can never *leave* the dock surface (there is nowhere
+        // on screen that isn't "the dock"), so leaving hover relies
+        // entirely on the QML containsMouse math seeing every motion
+        // event. If that chain wedges even once — a leave/enter swallowed
+        // while KWin re-stacks the window an icon click just launched, a
+        // stuck drag/drop flag — the invisible full-screen window keeps
+        // swallowing every click on the desktop until something external
+        // (e.g. alt-tab forcing a pointer-focus reset) breaks the cycle.
+        // With a band, moving off the dock always produces a real
+        // wl_pointer.leave, which resets hover and re-shrinks this mask:
+        // the state is self-correcting no matter what QML missed.
+        const int spacing = KoolDockSettings::iconSpacing();
+        const int longLen = maxDockLongSize();
+        // Pill band or tallest zoomed icon plus the hover-stay margins
+        // DockBar.layout()'s cross-axis check uses (bigSize + 2*spacing),
+        // whichever is larger — so the mask never retracts below a zone
+        // QML still considers "hovering".
+        const int shortLen = qMax(bgHeight,
+                                  KoolDockSettings::bigIconSize() + 2 * spacing + 4);
+        QRect band;
+        switch (screenEdge()) {
+        case Qt::BottomEdge:
+            band = QRect((w - longLen) / 2, h - shortLen, longLen, shortLen);
+            break;
+        case Qt::TopEdge:
+            band = QRect((w - longLen) / 2, 0, longLen, shortLen);
+            break;
+        case Qt::LeftEdge:
+            band = QRect(0, (h - longLen) / 2, shortLen, longLen);
+            break;
+        case Qt::RightEdge:
+            band = QRect(w - shortLen, (h - longLen) / 2, shortLen, longLen);
+            break;
+        }
+        m_view->setMask(QRegion(band));
+        return;
+    }
 
     if (autoHide()) {
         // Autohide: restrict to an 8 px trigger strip at the anchored edge,
@@ -923,8 +972,19 @@ void KoolDock::applyInputMask(bool hidden)
         m_view->setMask(QRegion(strip));
     } else {
         // Non-autohide: restrict to the pill area so clicks on windows
-        // behind the full-screen transparent overflow pass through.
-        const int pillLen = maxDockLongSize();
+        // behind the full-screen transparent overflow pass through. Rest
+        // length (+ the bg pill's spacing*2 padding, see Main.qml's bg
+        // width) — not maxDockLongSize(), whose zoom-expansion flanks are
+        // dead zones here: hover entry in DockBar.layout() only triggers
+        // within the rest pill, so masking beyond it just ate clicks
+        // beside the visible pill.
+        const int smallIconSize = KoolDockSettings::smallIconSize();
+        const int iconSpacing = KoolDockSettings::iconSpacing();
+        const int count = m_model ? m_model->count() : 0;
+        const int restLen = count > 0
+            ? iconSpacing + count * (smallIconSize + iconSpacing)
+            : 64;
+        const int pillLen = restLen + 2 * iconSpacing;
         const bool vert = (screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge);
         QRect rect;
         if (vert) {
