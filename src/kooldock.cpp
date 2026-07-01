@@ -291,14 +291,19 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
         }
     });
     reconfigure();
+
+    // All view teardown happens on aboutToQuit (see teardown()), so it is
+    // reached by *every* exit path — including the D-Bus
+    // QCoreApplication.quit() that --kill uses, which never goes through
+    // KoolDock::quit() at all.
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &KoolDock::teardown);
 }
 
 KoolDock::~KoolDock()
 {
-    // m_view and m_spacerView are cleaned up in quit().  If the process
-    // exits through a path that doesn't call quit() (e.g. SIGTERM), the
-    // QPointer auto-nulls when QApplication tears down the remaining
-    // top-level windows.
+    // m_view, m_prefsDialog and m_spacerView are destroyed in teardown()
+    // (on aboutToQuit), before ~QApplication starts deleting us — never
+    // here. See teardown() for the crash chain that ordering prevents.
 }
 
 DockModel *KoolDock::model() const { return m_model; }
@@ -1188,35 +1193,40 @@ bool KoolDock::eventFilter(QObject *watched, QEvent *event)
 
 void KoolDock::quit()
 {
-    // The QML Quit menu item's onTriggered runs inside m_view's signal
-    // handler.  Deleting m_view synchronously here would destroy the
-    // QQuickView (and its QML engine) while we're still on its stack —
-    // "Object destroyed while one of its QML signal handlers is in
-    // progress".  Use deleteLater() instead: the deferred-delete events
-    // are queued before QCoreApplication::quit() sets the exit flag, so
-    // Qt processes them in the same event-loop iteration while
-    // QApplication is still fully alive, then the loop exits cleanly.
-    // Tear the Preferences dialog down first if it is open: its QML bindings
-    // reference this object via the "kooldock" context property, so it must
-    // not outlive us (its ComboBox model bindings would re-run on our
-    // destroyed() signal and crash in the QML delegate model).
-    if (m_prefsDialog) {
-        m_prefsDialog->close();
-        delete m_prefsDialog;
-        m_prefsDialog = nullptr;
-    }
-    if (m_view) {
-        auto *root = m_view->rootObject();
-        if (root) {
-            root->setProperty("kooldock", QVariant());
-        }
-        m_view->close();
-        m_view->deleteLater();
-    }
-    if (m_spacerView) {
-        m_spacerView->deleteLater();
-    }
+    // Just stop the event loop; all teardown lives in teardown(), which
+    // runs on aboutToQuit once the loop has fully unwound. quit() is
+    // called from inside m_view's QML signal handlers (the Quit menu
+    // item) and from the Close eventFilter, where deleting m_view
+    // synchronously would be "Object destroyed while one of its QML
+    // signal handlers is in progress".
     QCoreApplication::quit();
+}
+
+void KoolDock::teardown()
+{
+    // Runs on QCoreApplication::aboutToQuit — after the event loop has
+    // exited (so no QML signal handler is on the stack) but while the
+    // QApplication is still fully alive, which makes synchronous deletion
+    // safe. deleteLater() is NOT an option here or in quit(): deferred
+    // deletes posted after the exit flag is set are never processed, the
+    // views survive into ~QApplication, and teardown order inverts.
+    //
+    // That inversion is what used to stall Plasma logout: KoolDock is
+    // parented to the QApplication, so ~QApplication destroyed it while
+    // the views were still alive; QML bindings referencing the "kooldock"
+    // context property re-evaluated on our destroyed() signal against a
+    // half-dead object (observed in core dumps: the Preferences ComboBox
+    // model bindings re-running into a KColorScheme SIGSEGV; a QQuickView
+    // destroyed after QGuiApplication is gone qFatal-aborts). KCrash then
+    // trapped the crash and waited for DrKonqi, which at session end never
+    // comes up — the process lingered with its Wayland surfaces mapped and
+    // Plasma's logout stalled with "must force quit kooldock2".
+    //
+    // Order matters: the Preferences dialog's visibleChanged handler
+    // touches m_view, so the dialog goes first while m_view is alive.
+    delete m_prefsDialog;
+    delete m_view;
+    delete m_spacerView;
 }
 
 void KoolDock::toggleOrientation()

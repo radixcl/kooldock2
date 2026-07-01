@@ -70,8 +70,9 @@ public:
     // and its surfaces are a privileged plasma-shell Panel plus a layer-shell
     // spacer the compositor can't even close -- so without this it lingers
     // and stalls logout. Treat a Close on m_view as "session wants us gone"
-    // and quit() (which tears down both surfaces). Nothing sends a panel a
-    // close during normal use, so day-to-day behaviour is unchanged.
+    // and quit(); teardown() then destroys both surfaces on aboutToQuit.
+    // Nothing sends a panel a close during normal use, so day-to-day
+    // behaviour is unchanged.
     bool eventFilter(QObject *watched, QEvent *event) override;
 
     DockModel *model() const;
@@ -157,6 +158,10 @@ private Q_SLOTS:
     void updateTrashState();
 
 private:
+    // Destroys the QML views synchronously. Runs on aboutToQuit — the only
+    // point every exit path reaches while QApplication is still alive. See
+    // the implementation for the crash chain this ordering prevents.
+    void teardown();
     void setupView();
     void applyPanelShell();
     // Creates/updates or hides the invisible layer-shell "spacer" surface

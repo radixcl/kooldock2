@@ -107,17 +107,12 @@ int main(int argc, char *argv[])
     // session management, so without this the surfaces stay mapped and Plasma
     // logout stalls on KoolDock until it's force-killed. KSignalHandler
     // delivers SIGTERM/SIGINT (what Plasma/systemd send at logout) safely on
-    // the event loop; quit() tears down both surfaces and exits.
+    // the event loop; KoolDock::teardown() then destroys both surfaces on
+    // aboutToQuit before the process exits.
     KSignalHandler::self()->watchSignal(SIGTERM);
     KSignalHandler::self()->watchSignal(SIGINT);
     QObject::connect(KSignalHandler::self(), &KSignalHandler::signalReceived,
-                     &app, [](int /*signal*/) {
-                         if (KoolDock::instance()) {
-                             KoolDock::instance()->quit();
-                         } else {
-                             qApp->quit();
-                         }
-                     });
+                     &app, [](int /*signal*/) { QCoreApplication::quit(); });
 
     return app.exec();
 }
