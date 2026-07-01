@@ -236,7 +236,8 @@ Item {
         layout()
     }
 
-    function layout() {
+    function layout(depth) {
+        depth = depth || 0
         const N = listModel.count
         if (N === 0) return
 
@@ -298,14 +299,12 @@ Item {
         const H = bigSize - smallSize
         const iDist = smallSize + spacing
 
-        // The bar stays centred within the window.  When the mouse first
-        // enters and icons zoom, contentLength grows, shifting the bar
-        // left by half the growth.  Computing localMousePos with rest
-        // contentLength makes the cursor appear left of where it really
-        // is, so the zoom peak lands one slot to the left.  Save the
-        // pre-transition hover state so we can re-run with the corrected
-        // bar position after contentLength is known (see end of layout()).
-        const wasHovering = bar.containsMouse
+        // The bar stays centred within the window, so its on-screen
+        // position depends on contentLength — which this very pass
+        // computes. Remember the value used for barNearEdge below: if the
+        // pass lands on a different contentLength, it re-runs itself with
+        // the corrected bar position (see end of layout()).
+        const usedContentLength = bar.contentLength
 
         // Project the cursor onto the bar's [0, contentLength] frame using
         // *last* layout's contentLength (read here, before it's overwritten
@@ -314,7 +313,7 @@ Item {
         // the window's width and globalMousePos is point.x; for vertical
         // edges they're the window's height and point.y. The 1D math is
         // identical either way (verified by a Node.js geometry sim).
-        const barNearEdge = windowExtent / 2 - bar.contentLength / 2
+        const barNearEdge = windowExtent / 2 - usedContentLength / 2
         const localMousePos = globalMousePos - barNearEdge
         // Long-axis check: the input mask (trigger strip) already restricts
         // the hover area to the pill's unzoomed footprint along this axis.
@@ -448,14 +447,20 @@ Item {
         // by Main.qml to grow the background pill to hug the icons.
         bar.contentLength = centers[N - 1] + sizes[N - 1] / 2 + spacing
 
-        // First frame of hover: barNearEdge was computed with the rest
-        // contentLength, which makes localMousePos appear ~(Δlength/2) px
-        // left of the true position.  Re-run with the now-correct zoomed
-        // contentLength so the biggest icon lands under the cursor.  Only
-        // one extra pass — wasHovering is already true in the re-entrant
-        // call so there's no infinite recursion.
-        if (!wasHovering && bar.containsMouse) {
-            layout()
+        // barNearEdge above came from the *previous* pass's contentLength.
+        // Whenever this pass lands on a different one — first frame of
+        // hover (rest → zoomed), or an item inserted/removed mid-hover
+        // (e.g. launching an app: its window transiently appears as a
+        // standalone task, then retro-fuses with the launcher once the
+        // async app_id arrives — two layout passes with no pointer motion)
+        // — the pill re-centres with the new length while the peak was
+        // solved against the old bar position, so the zoom lands
+        // (Δlength/2) px off the cursor and stays there until the next
+        // pointer event. Re-run with the corrected length; converges in a
+        // pass or two, depth-capped in case it ever doesn't.
+        if (bar.containsMouse && depth < 4
+                && Math.abs(bar.contentLength - usedContentLength) > 0.5) {
+            layout(depth + 1)
             return
         }
 
