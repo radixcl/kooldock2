@@ -1028,7 +1028,9 @@ Item *DockModel::findLauncherForAppId(const QString &appId) const
         if (firstName == QStringLiteral("flatpak")) {
             const QRegularExpression cmdRe(QStringLiteral("--command=(\\S+)"));
             const auto match = cmdRe.match(s);
-            if (match.hasMatch()) return match.captured(1);
+            // --command= may carry a full path (e.g. "/app/bin/edge"),
+            // so reduce it to a basename like the non-Flatpak branch.
+            if (match.hasMatch()) return QFileInfo(match.captured(1)).fileName();
         }
         return firstName;
     };
@@ -1047,13 +1049,23 @@ Item *DockModel::findLauncherForAppId(const QString &appId) const
         const QString launcherProgram = execBase(launcherExec);
         if (launcherProgram.isEmpty()) continue;
 
-        if (m_debug) qDebug() << "    checking launcher" << item->name() << "launcherProgram=" << launcherProgram << "taskProgram=" << taskProgram << "appId=" << appId;
+        const QString wmClass = df.desktopGroup().readEntry(QStringLiteral("StartupWMClass"), QString());
+
+        if (m_debug) qDebug() << "    checking launcher" << item->name() << "launcherProgram=" << launcherProgram << "wmClass=" << wmClass << "taskProgram=" << taskProgram << "appId=" << appId;
 
         // Match by executable (case-insensitive) — covers both the
         // KService-resolved program and a direct appId comparison for
         // apps where KService didn't find a service (e.g. "librewolf").
         if (launcherProgram.compare(taskProgram, Qt::CaseInsensitive) == 0 ||
             launcherProgram.compare(appId, Qt::CaseInsensitive) == 0) {
+            return item;
+        }
+
+        // Match by StartupWMClass: apps whose window class differs from
+        // their binary name declare it in the .desktop file (e.g. Flatpak
+        // Edge runs "/app/bin/edge" but its windows report app_id
+        // "microsoft-edge", with StartupWMClass=microsoft-edge).
+        if (!wmClass.isEmpty() && wmClass.compare(appId, Qt::CaseInsensitive) == 0) {
             return item;
         }
     }
