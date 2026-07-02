@@ -57,6 +57,9 @@ find_package(KWayland REQUIRED)
 # no strut/exclusive-zone API, so the spacer uses layer-shell purely for its
 # exclusive zone. The two protocols never decorate the same window.
 find_package(LayerShellQt REQUIRED)
+# libSM/libICE, used by the XSMP client (src/xsmpclient.cpp) that lets Plasma
+# logout terminate the dock cleanly. Always present on a Plasma system.
+find_package(X11 REQUIRED COMPONENTS SM ICE)
 
 find_path(PLASMA_WAYLAND_PROTOCOLS_DIR
     NAMES plasma-window-management.xml

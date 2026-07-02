@@ -15,6 +15,8 @@ add_executable(kooldock2
     windowactions.h
     unitylauncherwatcher.cpp
     unitylauncherwatcher.h
+    xsmpclient.cpp
+    xsmpclient.h
 )
 
 kconfig_add_kcfg_files(kooldock2 GENERATE_MOC kooldocksettings.kcfgc)
@@ -70,6 +72,8 @@ target_link_libraries(kooldock2 PRIVATE
     KF6::ColorScheme
     Plasma::KWaylandClient
     LayerShellQtInterface
+    X11::SM
+    X11::ICE
 )
 
 install(TARGETS kooldock2 ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

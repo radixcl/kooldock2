@@ -20,6 +20,7 @@
 #include "kooldock.h"
 #include "kooldocksettings.h"
 #include "version.h"
+#include "xsmpclient.h"
 
 int main(int argc, char *argv[])
 {
@@ -100,15 +101,16 @@ int main(int argc, char *argv[])
 
     KoolDock::create(&app, parser.isSet(optionsOption), parser.isSet(debugBoundsOption));
 
-    // Quit cleanly when the session ends. KoolDock's main window is a
-    // privileged org_kde_plasma_shell Panel (AlwaysVisible) and the spacer a
-    // wlr-layer-shell surface — neither is a normal xdg_toplevel the
-    // compositor can ask to close, and Qt's Wayland plugin implements no
-    // session management, so without this the surfaces stay mapped and Plasma
-    // logout stalls on KoolDock until it's force-killed. KSignalHandler
-    // delivers SIGTERM/SIGINT (what Plasma/systemd send at logout) safely on
-    // the event loop; KoolDock::teardown() then destroys both surfaces on
-    // aboutToQuit before the process exits.
+    // Quit cleanly when the session ends. The dock window is a Dock to KWin
+    // (org_kde_plasma_shell Panel role), and KWin's logout window-closing
+    // phase (closeWaylandWindows) waits for docks to close without ever
+    // sending them a close request — so we must exit in the earlier XSMP
+    // phase instead, or logout stalls on "KoolDock did not close". See
+    // xsmpclient.cpp for the full chain. SIGTERM/SIGINT handling stays as a
+    // fallback for the final systemd graphical-session.target stop and for
+    // plain kill; KoolDock::teardown() destroys the surfaces on aboutToQuit
+    // in every one of these paths.
+    installXsmpClient();
     KSignalHandler::self()->watchSignal(SIGTERM);
     KSignalHandler::self()->watchSignal(SIGINT);
     QObject::connect(KSignalHandler::self(), &KSignalHandler::signalReceived,
