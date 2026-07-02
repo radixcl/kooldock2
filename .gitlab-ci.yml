@@ -65,6 +65,8 @@ build:ubuntu:
         libkf6colorscheme-dev
         kwayland-dev
         liblayershellqtinterface-dev
+        libsm-dev
+        libice-dev
         plasma-wayland-protocols
         libwayland-dev
         libxcb1-dev
