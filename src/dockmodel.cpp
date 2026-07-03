@@ -1053,6 +1053,25 @@ Item *DockModel::findLauncherForAppId(const QString &appId) const
 
         if (m_debug) qDebug() << "    checking launcher" << item->name() << "launcherProgram=" << launcherProgram << "wmClass=" << wmClass << "taskProgram=" << taskProgram << "appId=" << appId;
 
+        // Chromium PWAs: Exec carries --app-id=<id> (plus optionally
+        // --profile-directory=<p>); their windows report app_id
+        // "chrome-<id>-<profile>" on Wayland or "crx_<id>" on X11.
+        // The executable is just the browser, so exec matching would
+        // fuse every PWA with the browser pin — match by PWA id only.
+        static const QRegularExpression pwaIdRe(QStringLiteral("--app-id=(\\w+)"));
+        const auto pwa = pwaIdRe.match(launcherExec);
+        if (pwa.hasMatch()) {
+            const QString id = pwa.captured(1);
+            static const QRegularExpression profileRe(QStringLiteral("--profile-directory=([^'\" ]+)"));
+            QString profile = profileRe.match(launcherExec).captured(1);
+            if (profile.isEmpty()) profile = QStringLiteral("Default");
+            if (appId.compare(QStringLiteral("chrome-") + id + QLatin1Char('-') + profile, Qt::CaseInsensitive) == 0 ||
+                appId.compare(QStringLiteral("crx_") + id, Qt::CaseInsensitive) == 0) {
+                return item;
+            }
+            continue;
+        }
+
         // Match by executable (case-insensitive) — covers both the
         // KService-resolved program and a direct appId comparison for
         // apps where KService didn't find a service (e.g. "librewolf").
