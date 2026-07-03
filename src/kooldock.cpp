@@ -49,6 +49,10 @@
 
 #include <qnativeinterface.h>
 
+#include <cstring>
+#include <wayland-client.h>
+#include "wayland-blur-client-protocol.h"
+
 namespace {
 // The strut "spacer": a borderless, input-transparent window that commits a
 // fully transparent buffer. It only exists so that, decorated as a
@@ -565,6 +569,13 @@ void KoolDock::setupView()
     // flushBlur() rate-limits and dedups; idle frames cost nothing.
     connect(m_view, &QQuickWindow::afterAnimating, this, &KoolDock::flushBlur);
 
+    // The actual protocol requests go out on the render thread, right
+    // before the frame's wl_surface.commit, so a commit can never split
+    // the create/set_region/commit triple (the full-screen flash race).
+    initBlurProtocol();
+    connect(m_view, &QQuickWindow::afterRendering, this, &KoolDock::renderPushBlur,
+            Qt::DirectConnection);
+
     // Re-apply position/size now that the resize mode above is in effect.
     // QQuickView's default SizeViewToRootObject mode (in force while
     // setSource() just loaded the QML) can shrink the window to the
@@ -1051,16 +1062,110 @@ void KoolDock::applyBlur()
         // and churning identical regions is what let it glitch full-screen.
         if (m_lastBlurState == 1 && region == m_lastBlurRegion)
             return;
-        KWindowEffects::enableBlurBehind(m_view, true, region);
+        queueBlurPush(region, true);
         m_lastBlurRegion = region;
         m_lastBlurState = 1;
     } else {
         m_blurDirty = false;
         if (m_lastBlurState == 0)
             return;
-        KWindowEffects::enableBlurBehind(m_view, false);
+        queueBlurPush(QRegion(), false);
         m_lastBlurRegion = QRegion();
         m_lastBlurState = 0;
+    }
+}
+
+void KoolDock::initBlurProtocol()
+{
+    if (m_blurRegistry) {
+        return;
+    }
+    auto *waylandApp = qApp->nativeInterface<QNativeInterface::QWaylandApplication>();
+    if (!waylandApp || !waylandApp->display()) {
+        return;
+    }
+    struct wl_display *display = waylandApp->display();
+    m_blurRegistry = wl_display_get_registry(display);
+    if (!m_blurRegistry) {
+        return;
+    }
+    static const struct wl_registry_listener registryListener = {
+        .global = [](void *data, struct wl_registry *registry, uint32_t id,
+                     const char *interface, uint32_t version) {
+            Q_UNUSED(version)
+            auto *self = static_cast<KoolDock *>(data);
+            if (std::strcmp(interface, org_kde_kwin_blur_manager_interface.name) == 0) {
+                self->m_blurManager = static_cast<org_kde_kwin_blur_manager *>(
+                    wl_registry_bind(registry, id, &org_kde_kwin_blur_manager_interface, 1));
+            } else if (std::strcmp(interface, wl_compositor_interface.name) == 0) {
+                self->m_blurCompositor = static_cast<wl_compositor *>(
+                    wl_registry_bind(registry, id, &wl_compositor_interface, 1));
+            }
+        },
+        .global_remove = [](void *, struct wl_registry *, uint32_t) {},
+    };
+    wl_registry_add_listener(m_blurRegistry, &registryListener, this);
+    wl_display_roundtrip(display);
+    if (!m_blurManager || !m_blurCompositor) {
+        qWarning() << "KoolDock: org_kde_kwin_blur_manager not available; "
+                      "falling back to KWindowEffects for blur";
+    } else {
+        qInfo() << "KoolDock: render-thread blur push active";
+    }
+}
+
+void KoolDock::queueBlurPush(const QRegion &region, bool enable)
+{
+    if (!m_blurManager || !m_blurCompositor) {
+        KWindowEffects::enableBlurBehind(m_view, enable, region);
+        return;
+    }
+    // The wl_surface lookup must happen on the gui thread; hand the raw
+    // pointer to the render thread together with the region.
+    auto *surface = KWayland::Client::Surface::fromWindow(m_view);
+    struct wl_surface *ws = surface ? static_cast<struct wl_surface *>(*surface) : nullptr;
+    {
+        QMutexLocker lock(&m_blurPendingMutex);
+        m_blurPendingRegion = region;
+        m_blurPendingEnabled = enable;
+        m_blurPendingSurface = ws;
+        m_blurPendingDirty = true;
+    }
+    // Guarantee a frame so renderPushBlur() runs and a surface commit
+    // follows to apply the new blur state (covers the trailing timer
+    // flush and the disable path, where no render may be pending).
+    m_view->update();
+}
+
+void KoolDock::renderPushBlur()
+{
+    QMutexLocker lock(&m_blurPendingMutex);
+    if (!m_blurPendingDirty || !m_blurPendingSurface) {
+        return;
+    }
+    m_blurPendingDirty = false;
+    if (m_blurPendingEnabled) {
+        auto *newBlur = org_kde_kwin_blur_manager_create(m_blurManager, m_blurPendingSurface);
+        auto *wregion = wl_compositor_create_region(m_blurCompositor);
+        for (const QRect &r : m_blurPendingRegion) {
+            wl_region_add(wregion, r.x(), r.y(), r.width(), r.height());
+        }
+        org_kde_kwin_blur_set_region(newBlur, wregion);
+        org_kde_kwin_blur_commit(newBlur);
+        wl_region_destroy(wregion);
+        // Deferred release: the previous object may still back the
+        // surface's current state until the swap's commit applies the
+        // new one; by the next push that has long happened.
+        if (m_blurObject) {
+            org_kde_kwin_blur_release(m_blurObject);
+        }
+        m_blurObject = newBlur;
+    } else {
+        if (m_blurObject) {
+            org_kde_kwin_blur_release(m_blurObject);
+            m_blurObject = nullptr;
+        }
+        org_kde_kwin_blur_manager_unset(m_blurManager, m_blurPendingSurface);
     }
 }
 

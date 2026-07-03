@@ -7,6 +7,7 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QMutex>
 #include <QObject>
 #include <QPointer>
 #include <QQuickView>
@@ -33,6 +34,12 @@ namespace LayerShellQt {
 class Window;
 }
 class QRasterWindow;
+
+struct wl_registry;
+struct wl_compositor;
+struct wl_surface;
+struct org_kde_kwin_blur_manager;
+struct org_kde_kwin_blur;
 
 class KoolDock : public QObject
 {
@@ -180,6 +187,18 @@ private:
     // throttle timer is the trailing-flush fallback for when rendering
     // goes idle before another frame is produced.
     void flushBlur();
+    // Render-thread blur push: KWin's org_kde_kwin_blur only re-reads the
+    // region when the blur object is (re)created, and creation leaves an
+    // instant with an empty region ("blur the whole window"). When the
+    // create/set_region/commit triple is sent from the gui thread, the
+    // render thread's wl_surface.commit can land inside that instant and
+    // KWin flashes the blur full-screen for a frame. Sending the triple
+    // from the render thread itself (afterRendering, right before the
+    // frame's commit in swapBuffers) serializes it with the surface
+    // commit, closing the race. See WIP.md.
+    void initBlurProtocol();                                // gui thread, once
+    void queueBlurPush(const QRegion &region, bool enable); // gui thread
+    void renderPushBlur();                                  // render thread
     void applyInputMask(bool hidden);
     void reconfigure();
     void refreshScreens();
@@ -224,6 +243,22 @@ private:
     // unknown, 0 disabled, 1 enabled.
     QRegion m_lastBlurRegion;
     int m_lastBlurState = -1;
+    // Raw org_kde_kwin_blur plumbing for the render-thread push. The
+    // manager/compositor are bound once on the gui thread; the pending
+    // region travels to the render thread under m_blurPendingMutex;
+    // m_blurObject is touched only by the render thread. The previous
+    // blur object is released on the *next* push (deferred release) —
+    // releasing it in the same batch as the create can drop the blur
+    // for a frame while KWin's surface state still points at it.
+    struct wl_registry *m_blurRegistry = nullptr;
+    struct wl_compositor *m_blurCompositor = nullptr;
+    struct org_kde_kwin_blur_manager *m_blurManager = nullptr;
+    struct org_kde_kwin_blur *m_blurObject = nullptr;
+    QMutex m_blurPendingMutex;
+    QRegion m_blurPendingRegion;
+    struct wl_surface *m_blurPendingSurface = nullptr;
+    bool m_blurPendingEnabled = false;
+    bool m_blurPendingDirty = false;
     // Time since the last enableBlurBehind() push, for the flushBlur()
     // rate limit (~30 fps — KWin can't regenerate the blur at 60 fps).
     QElapsedTimer m_blurThrottle;

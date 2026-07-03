@@ -22,15 +22,19 @@ add_executable(kooldock2
 kconfig_add_kcfg_files(kooldock2 GENERATE_MOC kooldocksettings.kcfgc)
 
 qt_generate_wayland_protocol_client_sources(kooldock2
-    FILES ${PLASMA_WAYLAND_PROTOCOLS_DIR}/plasma-window-management.xml
+    FILES
+        ${PLASMA_WAYLAND_PROTOCOLS_DIR}/plasma-window-management.xml
+        ${PLASMA_WAYLAND_PROTOCOLS_DIR}/blur.xml
 )
 
-set(_wayland_protocol_c ${CMAKE_CURRENT_BINARY_DIR}/wayland-plasma-window-management-protocol.c)
-set_source_files_properties(${_wayland_protocol_c} PROPERTIES
-    GENERATED TRUE
-    LANGUAGE C
-)
-target_sources(kooldock2 PRIVATE ${_wayland_protocol_c})
+foreach(_proto plasma-window-management blur)
+    set(_wayland_protocol_c ${CMAKE_CURRENT_BINARY_DIR}/wayland-${_proto}-protocol.c)
+    set_source_files_properties(${_wayland_protocol_c} PROPERTIES
+        GENERATED TRUE
+        LANGUAGE C
+    )
+    target_sources(kooldock2 PRIVATE ${_wayland_protocol_c})
+endforeach()
 
 target_sources(kooldock2 PRIVATE
     kooldock.qrc
