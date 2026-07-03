@@ -1136,11 +1136,6 @@ void KoolDock::showPreferences()
         return;
     }
 
-    // The dock is a full-screen panel surface sitting above normal
-    // windows. Make it transparent to input while the dialog is open
-    // so the user can interact with it. Restore when the dialog closes.
-    m_view->setFlag(Qt::WindowTransparentForInput, true);
-
     auto *dialog = new QQuickView();
     m_prefsDialog = dialog;
     // The dialog has its own QML engine, so it needs its own "kicon"
@@ -1166,7 +1161,6 @@ void KoolDock::showPreferences()
 
     QObject::connect(dialog, &QWindow::visibleChanged, this, [this, dialog](bool visible) {
         if (!visible) {
-            m_view->setFlag(Qt::WindowTransparentForInput, false);
             // Destroy the dialog on close rather than leaving it leaked-but-
             // hidden: a lingering dialog's QML bindings (which reference this
             // KoolDock via the "kooldock" context property) would re-run when
