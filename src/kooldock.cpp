@@ -134,36 +134,25 @@ public:
     {
         // Runs on a QtQuick worker thread; KIconLoader is not thread-safe.
         QMutexLocker iconLock(&iconThemeMutex());
-        QIcon icon = QIcon::fromTheme(id);
-        if (icon.isNull()) {
-            const QString lower = id.toLower();
-            if (lower != id) {
-                icon = QIcon::fromTheme(lower);
-            }
-            if (icon.isNull()) {
-                const int flatpakDash = id.indexOf(QLatin1String("-flatpak"), 0, Qt::CaseInsensitive);
-                if (flatpakDash > 0) {
-                    const QString stripped = id.left(flatpakDash);
-                    icon = QIcon::fromTheme(stripped);
-                    if (icon.isNull()) {
-                        icon = QIcon::fromTheme(stripped.toLower());
-                    }
-                }
-            }
-            if (icon.isNull() && id.contains(QLatin1Char('.'))) {
-                const QString last = id.section(QLatin1Char('.'), -1);
-                if (!last.isEmpty()) {
-                    icon = QIcon::fromTheme(last);
-                    if (icon.isNull()) icon = QIcon::fromTheme(last.toLower());
-                }
-            }
-            if (icon.isNull()) {
-                const QString resolved = resolveFlatpakIcon(id);
-                if (!resolved.isEmpty()) {
-                    icon = QIcon::fromTheme(resolved);
-                }
-            }
+        QStringList candidates{id, id.toLower()};
+        const int flatpakDash = id.indexOf(QLatin1String("-flatpak"), 0, Qt::CaseInsensitive);
+        if (flatpakDash > 0) {
+            const QString stripped = id.left(flatpakDash);
+            candidates << stripped << stripped.toLower();
         }
+        const QString last = id.section(QLatin1Char('.'), -1);
+        if (last != id && !last.isEmpty()) {
+            candidates << last << last.toLower();
+        }
+        candidates.removeDuplicates();
+
+        QIcon icon;
+        for (const QString &name : std::as_const(candidates)) {
+            icon = QIcon::fromTheme(name);
+            if (!icon.isNull()) break;
+        }
+        // resolveFlatpakIcon scans disk on a cache miss, so only as last resort.
+        if (icon.isNull()) icon = QIcon::fromTheme(resolveFlatpakIcon(id));
         if (icon.isNull()) icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
         const QSize s = requestedSize.isValid() ? requestedSize : QSize(48, 48);
         QPixmap pix = icon.pixmap(s);

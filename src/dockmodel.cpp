@@ -832,42 +832,26 @@ QString DockModel::desktopPathForAppId(const QString &appId) const
         return {};
     };
 
-    // 1. Exact match as provided by the compositor.
-    QString path = tryService(appId);
-    if (!path.isEmpty()) return path;
-
-    // 2. Strip "org.kde." prefix (common for KDE apps).
+    // Candidate desktop names, in priority order: the appId as provided by
+    // the compositor, without the "org.kde." prefix, the last reverse-DNS
+    // component (many apps use IDs like "com.github.user.AppName" where the
+    // desktop file is "AppName.desktop"), the second-to-last component
+    // (e.g. "net.sourceforge.MultiVNC"), and lowercased variants.
+    QStringList candidates{appId};
     if (appId.startsWith(QStringLiteral("org.kde."))) {
-        path = tryService(appId.mid(8));
-        if (!path.isEmpty()) return path;
+        candidates << appId.mid(8);
     }
-
-    // 3. If the appId looks like reverse-DNS (contains dots), try each
-    // dot-separated component as a desktop name.  Many apps use IDs like
-    // "com.github.user.AppName" where the desktop file is "AppName.desktop"
-    // or "com.github.user.AppName.desktop".
     if (appId.contains(QLatin1Char('.'))) {
         const QStringList parts = appId.split(QLatin1Char('.'));
-        // Try the last component first (most likely to be the app name).
-        if (!parts.last().isEmpty()) {
-            path = tryService(parts.last());
-            if (!path.isEmpty()) return path;
-            // Try case-insensitive.
-            path = tryService(parts.last().toLower());
-            if (!path.isEmpty()) return path;
-        }
-        // Try the second-to-last component (e.g. "net.sourceforge.MultiVNC"
-        // where "sourceforge" is not the app name but "MultiVNC" is last).
-        if (parts.size() >= 2 && !parts.at(parts.size() - 2).isEmpty()) {
-            path = tryService(parts.at(parts.size() - 2));
-            if (!path.isEmpty()) return path;
-        }
+        candidates << parts.last() << parts.last().toLower();
+        if (parts.size() >= 2) candidates << parts.at(parts.size() - 2);
     }
+    candidates << appId.toLower();
+    candidates.removeDuplicates();
 
-    // 4. Case-insensitive exact match.
-    const QString lower = appId.toLower();
-    if (lower != appId) {
-        path = tryService(lower);
+    for (const QString &name : std::as_const(candidates)) {
+        if (name.isEmpty()) continue;
+        const QString path = tryService(name);
         if (!path.isEmpty()) return path;
     }
 
