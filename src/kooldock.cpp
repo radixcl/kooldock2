@@ -1293,12 +1293,16 @@ bool KoolDock::eventFilter(QObject *watched, QEvent *event)
 void KoolDock::quit()
 {
     // Just stop the event loop; all teardown lives in teardown(), which
-    // runs on aboutToQuit once the loop has fully unwound. quit() is
-    // called from inside m_view's QML signal handlers (the Quit menu
-    // item) and from the Close eventFilter, where deleting m_view
-    // synchronously would be "Object destroyed while one of its QML
-    // signal handlers is in progress".
-    QCoreApplication::quit();
+    // runs on aboutToQuit. quit() is called from inside m_view's QML
+    // signal handlers (the Quit menu item) and from the Close
+    // eventFilter, where deleting m_view synchronously would be "Object
+    // destroyed while one of its QML signal handlers is in progress".
+    // Queued delivery is mandatory: on Qt 6.10 a direct
+    // QCoreApplication::quit() is delivered synchronously through
+    // QGuiApplicationPrivate::processApplicationTermination, so
+    // aboutToQuit -> teardown() would fire inside the QML handler stack
+    // and hit exactly that qFatal.
+    QMetaObject::invokeMethod(qApp, &QCoreApplication::quit, Qt::QueuedConnection);
 }
 
 void KoolDock::teardown()
