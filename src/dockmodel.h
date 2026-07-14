@@ -82,6 +82,7 @@ private Q_SLOTS:
 private:
     void rebuild();
     void updateIndices();
+    void resyncLauncherDesktopFiles();
     int insertTaskSorted(Item *item);
     bool shouldShowTask(const WindowTasks::TaskData &data) const;
     Item *findLauncherForAppId(const QString &appId) const;

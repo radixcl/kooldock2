@@ -314,6 +314,25 @@ void DockModel::updateIndices()
     }
 }
 
+void DockModel::resyncLauncherDesktopFiles()
+{
+    // The granular launcher mutations (add-at/remove/move) renumber the
+    // on-disk copies without a model reload, so the in-memory items' paths
+    // go stale. Launchers in m_items follow the on-disk order, so walk both
+    // in lockstep and refresh the paths — otherwise findLauncherForAppId()
+    // and desktopActions() read Exec from files that no longer exist and
+    // new windows stop fusing with their pinned launchers.
+    const QString dir = m_launchers->menuDir();
+    const QStringList files = m_launchers->sortedFiles();
+    int i = 0;
+    for (Item *item : std::as_const(m_items)) {
+        if (!item->isLauncher()) continue;
+        if (i >= files.size()) break;
+        item->setDesktopFile(dir + files.at(i));
+        ++i;
+    }
+}
+
 int DockModel::insertTaskSorted(Item *item)
 {
     int firstTask = 0;
@@ -696,9 +715,8 @@ void DockModel::addLauncherAt(const QString &filePath, int row)
     // Write to disk without the full reload() it would otherwise trigger
     // (which tears down and rebuilds every delegate — the left-to-right
     // reflash). Then insert just the new row, the same granular approach
-    // moveLauncher uses. As there, the renumber renames existing launcher
-    // copies on disk so their stored paths go stale, which is tolerated:
-    // launch() uses the X-KoolDock-Source path and remove/move work by index.
+    // moveLauncher uses. The renumber renames existing launcher copies on
+    // disk; resyncLauncherDesktopFiles() below refreshes the stored paths.
     m_suppressReload = true;
     m_launchers->addLauncherAt(filePath, launcherIdx);
     m_suppressReload = false;
@@ -732,6 +750,7 @@ void DockModel::addLauncherAt(const QString &filePath, int row)
     m_items.insert(modelRow, newItem);
     endInsertRows();
     updateIndices();
+    resyncLauncherDesktopFiles();
     Q_EMIT itemInserted(modelRow);
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
@@ -768,6 +787,7 @@ void DockModel::removeLauncher(int row)
     endRemoveRows();
     delete item;
     updateIndices();
+    resyncLauncherDesktopFiles();
     Q_EMIT itemRemoved(row);
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
@@ -808,6 +828,7 @@ void DockModel::moveLauncher(int from, int to)
     m_items.move(from, to);
     endMoveRows();
     updateIndices();
+    resyncLauncherDesktopFiles();
     Q_EMIT itemMoved(from, to);
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
