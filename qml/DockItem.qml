@@ -93,10 +93,16 @@ Item {
 
     width:  itemSize
     height: itemSize
-    // Raise the whole item above siblings while its tooltip is showing so
-    // the tooltip (a child, see below) renders on top of neighbouring
-    // zoomed icons. Reverts to 0 when hidden — no effect on normal z-order.
-    z: tooltipBox.opacity > 0.01 ? 100 : 0
+    // Base z=1 keeps the delegate above the bar's fallback right-click
+    // MouseArea (DockBar.qml, declared after the Repeater), which otherwise
+    // stacks above z=0 siblings and steals every right-click on an icon —
+    // opening the dock-wide menu instead of the per-app context menu. This
+    // was masked by the tooltip boost below: only icons whose tooltip
+    // happened to be showing (z=100) received right-clicks, so the context
+    // menu only worked inside the tooltip's delay..timeout visibility
+    // window (verified by a QtTest hit-testing harness). 100 while the
+    // tooltip shows so it renders on top of neighbouring zoomed icons.
+    z: tooltipBox.opacity > 0.01 ? 100 : 1
 
     // Position along the dock's long axis (itemPos) and short axis (edge
     // side). On BottomEdge icons sit at the bottom and grow upward; on
