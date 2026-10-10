@@ -323,7 +323,7 @@ void DockModel::resyncLauncherDesktopFiles()
     // and desktopActions() read Exec from files that no longer exist and
     // new windows stop fusing with their pinned launchers.
     const QString dir = m_launchers->menuDir();
-    const QStringList files = m_launchers->sortedFiles();
+    const QStringList files = m_launchers->visibleFiles();
     int i = 0;
     for (Item *item : std::as_const(m_items)) {
         if (!item->isLauncher()) continue;

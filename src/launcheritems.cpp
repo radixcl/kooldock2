@@ -37,26 +37,16 @@ QList<Item *> LauncherItems::load() const
         return result;
     }
 
-    QStringList files = sortedFiles();
-    if (files.isEmpty()) {
+    if (sortedFiles().isEmpty()) {
         ensureDefaultLaunchers();
-        files = sortedFiles();
     }
 
-    for (const QString &file : files) {
+    for (const QString &file : visibleFiles()) {
         const QString path = dir.absoluteFilePath(file);
-        // KConfig requires the executable bit on .desktop files outside
-        // system directories. Ensure existing files have it set.
-        QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
         KDesktopFile df(path);
         const QString name = df.readName();
         const QString icon = df.readIcon();
         const QString exec = df.desktopGroup().readEntry(QStringLiteral("Exec"), QString());
-        const bool noDisplay = df.noDisplay();
-
-        if (noDisplay || name.isEmpty()) {
-            continue;
-        }
 
         auto *item = new Item(Item::Kind::Launcher, name, icon, exec, 0);
         item->setDesktopFile(path);
@@ -114,8 +104,9 @@ void LauncherItems::addLauncherAt(const QString &desktopFile, int index)
     // and renumber so the saved order matches the drop position.
     QStringList ordered = sortedFiles();
     const int from = ordered.indexOf(destName);
-    if (from >= 0 && index >= 0 && index < ordered.size() && index != from) {
-        ordered.move(from, index);
+    const QStringList visible = visibleFiles();
+    if (from >= 0 && visible.contains(destName) && index >= 0 && index < visible.size() - 1) {
+        ordered.move(from, ordered.indexOf(visible.at(index)));
     }
     renumber(ordered);
     Q_EMIT changed();
@@ -124,19 +115,22 @@ void LauncherItems::addLauncherAt(const QString &desktopFile, int index)
 void LauncherItems::removeLauncher(int index)
 {
     const QStringList files = sortedFiles();
-    if (index < 0 || index >= files.size()) return;
-    QFile::remove(m_menuDir + files.at(index));
-    renumber(files.mid(0, index) + files.mid(index + 1));
+    const QStringList visible = visibleFiles();
+    if (index < 0 || index >= visible.size()) return;
+    const int fileIndex = files.indexOf(visible.at(index));
+    QFile::remove(m_menuDir + files.at(fileIndex));
+    renumber(files.mid(0, fileIndex) + files.mid(fileIndex + 1));
     Q_EMIT changed();
 }
 
 void LauncherItems::moveLauncher(int from, int to)
 {
     const QStringList files = sortedFiles();
-    if (from < 0 || from >= files.size() || to < 0 || to >= files.size() || from == to) return;
+    const QStringList visible = visibleFiles();
+    if (from < 0 || from >= visible.size() || to < 0 || to >= visible.size() || from == to) return;
 
     QStringList reordered = files;
-    reordered.move(from, to);
+    reordered.move(files.indexOf(visible.at(from)), files.indexOf(visible.at(to)));
     renumber(reordered);
     Q_EMIT changed();
 }
@@ -156,6 +150,19 @@ QStringList LauncherItems::sortedFiles() const
         return a < b;
     });
     return files;
+}
+
+QStringList LauncherItems::visibleFiles() const
+{
+    QStringList visible;
+    for (const QString &file : sortedFiles()) {
+        const QString path = m_menuDir + file;
+        // KConfig requires the executable bit on .desktop files outside system directories.
+        QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::ExeOwner);
+        KDesktopFile df(path);
+        if (!df.noDisplay() && !df.readName().isEmpty()) visible.append(file);
+    }
+    return visible;
 }
 
 void LauncherItems::renumber(const QStringList &orderedPaths)

@@ -81,3 +81,9 @@ target_link_libraries(kooldock2 PRIVATE
 )
 
 install(TARGETS kooldock2 ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+
+if(BUILD_TESTING)
+    add_executable(launcheritems_test launcheritems_test.cpp launcheritems.cpp launcheritems.h item.h)
+    target_link_libraries(launcheritems_test PRIVATE Qt6::Core KF6::ConfigCore)
+    add_test(NAME launcheritems_test COMMAND launcheritems_test)
+endif()

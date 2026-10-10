@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(kooldock2 VERSION 0.0.10 LANGUAGES CXX C)
+project(kooldock2 VERSION 0.0.11 LANGUAGES CXX C)
 
 set(PROJECT_BUG_ADDRESS "https://gitlab.com/radixcl/kooldock2/issues")
 
@@ -23,6 +23,7 @@ include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(ECMQtDeclareLoggingCategory)
 include(FeatureSummary)
+include(CTest)
 
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     Core

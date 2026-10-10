@@ -22,6 +22,8 @@ public:
 
     // Launcher file names (sans dir) in on-disk order.
     QStringList sortedFiles() const;
+    // Only entries that load() exposes as dock items, in the same order.
+    QStringList visibleFiles() const;
 
     public Q_SLOTS:
     void refresh();
