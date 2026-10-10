@@ -10,7 +10,7 @@
 Origin: KoolDock2
 Label: KoolDock2
 Codename: ${UBUNTU_CODENAME}
-Architectures: amd64
+Architectures: amd64 arm64
 Components: main
 Description: KoolDock2 packages for Ubuntu ${UBUNTU_CODENAME}
 SignWith: ${GPG_KEY_ID}

@@ -171,9 +171,11 @@ Command-line options:
 
 ## Releasing (maintainers)
 
-The CI pipeline builds a `.deb` on every push to `dev`/`main`, and on **tags**
-it additionally publishes that package to the signed APT repo on GitLab Pages
-(the `pages` job in `.gitlab-ci.yml`, using `reprepro`). To cut a release:
+The CI pipeline builds native `amd64` and `arm64` `.deb` packages on every push
+to `dev`/`main`, and on **tags** publishes both to the signed APT repo on GitLab
+Pages (the `pages` job in `.gitlab-ci.yml`, using `reprepro`). It uses GitLab's
+`saas-linux-small-amd64` and `saas-linux-small-arm64` hosted runners. To cut a
+release:
 
 1. One-time setup (per project):
    - Generate a **passphraseless** signing key (a dedicated repo key, not a
