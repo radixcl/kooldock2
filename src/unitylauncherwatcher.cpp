@@ -13,6 +13,12 @@ UnityLauncherWatcher::UnityLauncherWatcher(QObject *parent)
         QStringLiteral("Update"), this, SLOT(onUpdate(QString,QVariantMap)));
 }
 
+void UnityLauncherWatcher::replayBadges()
+{
+    for (auto it = m_state.cbegin(); it != m_state.cend(); ++it)
+        Q_EMIT badgeChanged(it.key(), it.value().count, it.value().visible);
+}
+
 void UnityLauncherWatcher::onUpdate(const QString &appUri, const QVariantMap &properties)
 {
     // app_uri looks like "application://org.telegram.desktop.desktop".

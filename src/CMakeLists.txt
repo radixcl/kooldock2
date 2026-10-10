@@ -86,4 +86,12 @@ if(BUILD_TESTING)
     add_executable(launcheritems_test launcheritems_test.cpp launcheritems.cpp launcheritems.h item.h)
     target_link_libraries(launcheritems_test PRIVATE Qt6::Core KF6::ConfigCore)
     add_test(NAME launcheritems_test COMMAND launcheritems_test)
+
+    add_executable(item_test item_test.cpp item.h)
+    target_link_libraries(item_test PRIVATE Qt6::Core)
+    add_test(NAME item_test COMMAND item_test)
+
+    add_executable(unitylauncherwatcher_test unitylauncherwatcher_test.cpp unitylauncherwatcher.cpp unitylauncherwatcher.h)
+    target_link_libraries(unitylauncherwatcher_test PRIVATE Qt6::Core Qt6::DBus)
+    add_test(NAME unitylauncherwatcher_test COMMAND unitylauncherwatcher_test)
 endif()

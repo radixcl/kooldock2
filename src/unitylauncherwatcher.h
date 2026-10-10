@@ -20,6 +20,7 @@ class UnityLauncherWatcher : public QObject
     Q_OBJECT
 public:
     explicit UnityLauncherWatcher(QObject *parent = nullptr);
+    void replayBadges();
 
 Q_SIGNALS:
     // desktopId has no "application://" prefix or ".desktop" suffix, e.g.

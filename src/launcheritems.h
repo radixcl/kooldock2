@@ -29,7 +29,7 @@ public:
     void refresh();
     void addLauncher(const QString &desktopFile);
     // Add a launcher at a specific position in the order (index < 0 appends).
-    void addLauncherAt(const QString &desktopFile, int index);
+    bool addLauncherAt(const QString &desktopFile, int index);
     void removeLauncher(int index);
     void moveLauncher(int from, int to);
 

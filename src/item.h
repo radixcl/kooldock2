@@ -83,7 +83,7 @@ public:
             Q_EMIT windowIdChanged();
         }
     }
-    bool isGrouped() const { return m_isRunning && m_windowCount > 1; }
+    bool isGrouped() const { return m_windowCount > 1; }
 
     bool removeGroupedWindowId(quint64 id)
     {

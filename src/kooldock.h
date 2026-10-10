@@ -269,6 +269,8 @@ private:
     QTimer m_dragHeartbeat;
     QTimer m_trashCheckTimer;
     bool m_trashIsEmpty = true;
+    bool m_trashCheckPending = false;
+    bool m_trashListingHasEntries = false;
     QStringList m_screenNames;
 };
 

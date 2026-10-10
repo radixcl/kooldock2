@@ -76,6 +76,7 @@ Q_SIGNALS:
     void windowChanged(quint64 windowId);
     void activeWindowChanged(quint64 windowId);
     void availabilityChanged();
+    void currentDesktopChanged();
 
 private Q_SLOTS:
     void slotWindowAdded(WId id);

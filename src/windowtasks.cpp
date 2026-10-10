@@ -212,6 +212,8 @@ void WindowTasks::start()
                 this, &WindowTasks::slotWindowChanged);
         connect(KX11Extras::self(), &KX11Extras::activeWindowChanged,
                 this, &WindowTasks::slotActiveWindowChanged);
+        connect(KX11Extras::self(), &KX11Extras::currentDesktopChanged,
+                this, &WindowTasks::currentDesktopChanged);
         return;
     }
 

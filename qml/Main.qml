@@ -14,7 +14,7 @@ Item {
     readonly property bool debugBounds: kooldock ? kooldock.debugBounds : false
 
     readonly property int smallSize: settings ? settings.smallIconSize : 48
-    readonly property int bigSize: settings ? settings.bigIconSize : 96
+    readonly property int bigSize: settings ? Math.max(smallSize, settings.bigIconSize) : 96
     readonly property int zoomRange: settings ? settings.bigIconAmount : 5
     readonly property int spacing: settings ? settings.iconSpacing : 10
     readonly property int zoomDuration: settings ? settings.zoomSpeed : 200

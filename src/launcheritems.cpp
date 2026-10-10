@@ -96,10 +96,10 @@ void LauncherItems::addLauncher(const QString &desktopFile)
         Q_EMIT changed();
 }
 
-void LauncherItems::addLauncherAt(const QString &desktopFile, int index)
+bool LauncherItems::addLauncherAt(const QString &desktopFile, int index)
 {
     const QString destName = copyLauncherFile(desktopFile);
-    if (destName.isEmpty()) return;
+    if (destName.isEmpty()) return false;
     // copyLauncherFile lands it last (highest prefix); move it to `index`
     // and renumber so the saved order matches the drop position.
     QStringList ordered = sortedFiles();
@@ -110,6 +110,7 @@ void LauncherItems::addLauncherAt(const QString &desktopFile, int index)
     }
     renumber(ordered);
     Q_EMIT changed();
+    return true;
 }
 
 void LauncherItems::removeLauncher(int index)

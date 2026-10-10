@@ -49,6 +49,7 @@ public:
     // Add a launcher at the model row where it was dropped (row < 0 appends).
     Q_INVOKABLE void addLauncherAt(const QString &filePath, int row);
     Q_INVOKABLE void removeLauncher(int row);
+    Q_INVOKABLE void removeLauncherItem(QObject *item);
     Q_INVOKABLE void moveLauncher(int from, int to);
     Q_INVOKABLE bool isLauncher(int row) const;
     Q_INVOKABLE void pinTask(quint64 windowId);

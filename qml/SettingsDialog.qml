@@ -378,7 +378,11 @@ Item {
                         SpinBox {
                             from: 16; to: 128; stepSize: 4
                             value: settings ? settings.smallIconSize : 48
-                            onValueModified: { if (settings) settings.smallIconSize = value }
+                            onValueModified: {
+                                if (!settings) return
+                                if (settings.bigIconSize < value) settings.bigIconSize = value
+                                settings.smallIconSize = value
+                            }
                         }
                         Label { text: "px"; opacity: 0.45 }
                         Item { Layout.fillWidth: true }
@@ -387,7 +391,7 @@ Item {
                         Layout.fillWidth: true; spacing: 6
                         Label { text: i18n("Zoomed size:"); Layout.preferredWidth: 140; Layout.alignment: Qt.AlignRight | Qt.AlignVCenter; opacity: 0.75 }
                         SpinBox {
-                            from: 32; to: 256; stepSize: 4
+                            from: settings ? Math.max(32, settings.smallIconSize) : 32; to: 256; stepSize: 4
                             value: settings ? settings.bigIconSize : 96
                             onValueModified: { if (settings) settings.bigIconSize = value }
                         }

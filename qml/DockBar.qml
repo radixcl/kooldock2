@@ -625,9 +625,8 @@ Item {
                 for (let i = 0; i < urls.length; i++) {
                     const url = urls[i]
                     if (url.toString().endsWith(".desktop")) {
-                        const localFile = url.toString().replace("file://", "")
-                        if (localFile.length > 0 && bar.kooldock && bar.kooldock.model) {
-                            bar.kooldock.model.addLauncherAt(localFile, target)
+                        if (bar.kooldock && bar.kooldock.model) {
+                            bar.kooldock.model.addLauncherAt(url.toString(), target)
                             bar.dropPin = true
                         }
                     }
@@ -722,11 +721,11 @@ Item {
                 bar.externalDragMove(vertical ? p.y : p.x)
             }
             onExternalDesktopDragExited: bar.externalDragClear()
-            onExternalDesktopDropped: (localFile) => {
+            onExternalDesktopDropped: (desktopUrl) => {
                 const target = bar.externalDropTarget
                 bar.externalDragReset()
-                if (localFile.length > 0 && bar.kooldock && bar.kooldock.model) {
-                    bar.kooldock.model.addLauncherAt(localFile, target)
+                if (desktopUrl.length > 0 && bar.kooldock && bar.kooldock.model) {
+                    bar.kooldock.model.addLauncherAt(desktopUrl, target)
                     bar.dropPin = true
                 }
             }
@@ -738,7 +737,7 @@ Item {
             // removal (drag outside the dock) with the poof animation.
             onDragStarted: (idx) => {
                 removeTimer.stop()
-                removeTimer.idx = -1
+                removeTimer.launcher = null
                 bar.dragIndex = idx
                 // Reserve the gap at the item's own slot so nothing shifts
                 // until the cursor actually moves to another slot.
@@ -803,7 +802,8 @@ Item {
                     delegateItem.width = delegateItem.width
                     delegateItem.height = delegateItem.height
                     delegateItem.playDestroyAnimation()
-                    removeTimer.idx = from
+                    removeTimer.launcher = bar.kooldock && bar.kooldock.model
+                        ? bar.kooldock.model.items[from] : null
                     removeTimer.start()
                 } else {
                     // Dropped inside: zero the offset so the icon settles into
@@ -841,17 +841,17 @@ Item {
     }
 
     // Timer to delay the actual model removal until the poof animation
-    // has played. The index is stashed in a custom property.
+    // has played. Keep the item itself: its row may change in the meantime.
     Timer {
         id: removeTimer
-        property int idx: -1
+        property var launcher: null
         // Outlast the poof burst (poofHideTimer 500ms / the 400ms anims) so
         // the delegate isn't torn down mid-burst, cutting it off.
         interval: 500
         onTriggered: {
-            if (idx >= 0 && bar.kooldock && bar.kooldock.model)
-                bar.kooldock.model.removeLauncher(idx)
-            idx = -1
+            if (launcher && bar.kooldock && bar.kooldock.model)
+                bar.kooldock.model.removeLauncherItem(launcher)
+            launcher = null
         }
     }
 

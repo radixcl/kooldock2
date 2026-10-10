@@ -86,7 +86,7 @@ Item {
     // scene coords; the bar maps it to its own frame.
     signal externalDesktopDragMoved(var scenePt)
     signal externalDesktopDragExited()
-    signal externalDesktopDropped(string localFile)
+    signal externalDesktopDropped(string desktopUrl)
 
     readonly property bool vertical: edge === Qt.LeftEdge || edge === Qt.RightEdge
     readonly property real iconPad: iconPadding
@@ -129,7 +129,7 @@ Item {
         id: destroyScale
         property real scale: 1.0
     }
-    scale: dragActive ? 1.3 : 1.0
+    scale: (dragActive || trashDrop.containsDrag) ? 1.3 : 1.0
     transformOrigin: Item.Center
     // Visual feedback during drag: when in the removal zone, the icon
     // becomes semi-transparent to indicate it will be removed on release.
@@ -229,13 +229,13 @@ Item {
     // Trash drop area: accept file drops to move files to trash.
     // Only active for trash items. Accepts any URI (files, folders).
     DropArea {
+        id: trashDrop
         anchors.fill: parent
         enabled: isTrash
         keys: ["text/uri-list"]
         onContainsDragChanged: { if (item.kooldock) item.kooldock.setIconDragOver(containsDrag) }
         onEntered: (drop) => {
             drop.accepted = true
-            item.scale = 1.3
         }
         onDropped: (drop) => {
             if (drop.hasUrls) {
@@ -245,9 +245,7 @@ Item {
                 item.trashDropped(urls)
             }
             drop.accepted = true
-            item.scale = 1.0
         }
-        onExited: { item.scale = 1.0 }
     }
 
     // Open-with drop: drag a file onto a launcher icon to open it with that
@@ -287,7 +285,7 @@ Item {
                 for (let i = 0; i < drop.urls.length; i++) {
                     const u = drop.urls[i].toString()
                     if (u.endsWith(".desktop"))
-                        item.externalDesktopDropped(u.replace("file://", ""))
+                        item.externalDesktopDropped(u)
                     else
                         dataUrls.push(drop.urls[i])
                 }
@@ -301,7 +299,7 @@ Item {
 
     // Highlight ring while a data file hovers over an open-with target. Bound
     // to containsDrag (no imperative scale assignment, so it can't strand the
-    // zoom's scale binding the way the trash highlight does). Suppressed for a
+    // zoom's scale binding). Suppressed for a
     // .desktop drag, which previews as the bar's insertion gap instead.
     Rectangle {
         anchors.fill: parent

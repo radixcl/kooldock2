@@ -45,7 +45,9 @@ int main(int argc, char **argv)
     if (launchers.sortedFiles().size() != 2) return 6; // Hidden file was not removed.
     const QString source = home.filePath(QStringLiteral("third.desktop"));
     if (!writeLauncher(source, QStringLiteral("Third"))) return 7;
-    launchers.addLauncherAt(source, 0);
+    if (!launchers.addLauncherAt(source, 0)) return 8;
     if (names() != QStringList({QStringLiteral("Third"), QStringLiteral("Other")})) return 8;
+    if (launchers.addLauncherAt(home.filePath(QStringLiteral("missing.desktop")), 0)) return 9;
+    if (names() != QStringList({QStringLiteral("Third"), QStringLiteral("Other")})) return 10;
     return 0;
 }

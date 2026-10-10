@@ -27,6 +27,7 @@ public:
     ~PlasmaWindow() override;
 
     WindowTaskInfo info() const { return m_info; }
+    bool initialStateReceived() const { return m_initialStateReceived; }
 
     void requestActivate();
     void requestMinimize();
@@ -37,6 +38,7 @@ public:
 
 Q_SIGNALS:
     void infoChanged();
+    void initialStateReceivedSignal();
     void unmapped();
 
 protected:
@@ -44,10 +46,12 @@ protected:
     void org_kde_plasma_window_app_id_changed(const QString &app_id) override;
     void org_kde_plasma_window_state_changed(uint32_t flags) override;
     void org_kde_plasma_window_themed_icon_name_changed(const QString &name) override;
+    void org_kde_plasma_window_initial_state() override;
     void org_kde_plasma_window_unmapped() override;
 
 private:
     WindowTaskInfo m_info;
+    bool m_initialStateReceived = false;
 };
 
 class PlasmaWindowManagement : public QObject, public QtWayland::org_kde_plasma_window_management
@@ -60,7 +64,7 @@ public:
     void bind(struct ::wl_registry *registry, uint32_t id, uint32_t version);
     bool isReady() const { return object() != nullptr; }
 
-    QHash<quint64, PlasmaWindow *> windows() const { return m_windows; }
+    const QHash<quint64, PlasmaWindow *> &windows() const { return m_windows; }
     WindowTaskInfo windowInfo(quint64 id) const;
     // KWin internal UUID for a window (as the plasma-window-management
     // protocol announced it) — the handle KWin's Window View effect expects.
@@ -92,6 +96,7 @@ protected:
 
 private:
     void onWindowInfoChanged(quint64 id);
+    void onWindowInitialState();
     void onWindowUnmapped();
     void updateActiveWindow();
     quint64 ensureWindowId(const QString &uuid);

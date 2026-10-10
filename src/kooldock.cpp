@@ -25,6 +25,8 @@
 #include <KWindowEffects>
 #include <KWindowSystem>
 #include <KIO/CopyJob>
+#include <KIO/EmptyTrashJob>
+#include <KIO/ListJob>
 
 #include <QCoreApplication>
 #include <QDesktopServices>
@@ -190,6 +192,9 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
     connect(m_tasks, &WindowTasks::windowChanged, m_model, &DockModel::onWindowChanged);
     connect(m_tasks, &WindowTasks::activeWindowChanged, m_model, &DockModel::onActiveWindowChanged);
     connect(m_tasks, &WindowTasks::availabilityChanged, m_model, &DockModel::reload);
+    connect(m_tasks, &WindowTasks::currentDesktopChanged, m_model, [this]() {
+        if (KoolDockSettings::currentDesktopOnly()) m_model->reload();
+    });
 
     m_hideTimer.setSingleShot(true);
     connect(&m_hideTimer, &QTimer::timeout, this, &KoolDock::onHideTimer);
@@ -225,6 +230,7 @@ KoolDock::KoolDock(QObject *parent, bool debugBounds)
     m_trashCheckTimer.setInterval(2000);
     connect(&m_trashCheckTimer, &QTimer::timeout, this, &KoolDock::updateTrashState);
     m_trashCheckTimer.start();
+    updateTrashState();
 
     // Start window/task tracking FIRST.  The raw libwayland registry in
     // WaylandWindowTasks::start() needs to bind org_kde_plasma_window_management
@@ -818,7 +824,7 @@ int KoolDock::maxDockLongSize() const
     }
 
     const int smallIconSize = KoolDockSettings::smallIconSize();
-    const int bigIconSize = KoolDockSettings::bigIconSize();
+    const int bigIconSize = qMax(smallIconSize, KoolDockSettings::bigIconSize());
     const int iconSpacing = KoolDockSettings::iconSpacing();
     const int zoomRange = KoolDockSettings::bigIconAmount();
 
@@ -853,7 +859,8 @@ int KoolDock::maxDockShortSize() const
     // beside the icon and its width varies with the app name length;
     // we reserve a generous fixed amount (~300 px) for typical names.
     const int bgHeight = KoolDockSettings::dockHeight();
-    const int needed = KoolDockSettings::iconSpacing() + KoolDockSettings::bigIconSize() + 4;
+    const int needed = KoolDockSettings::iconSpacing()
+        + qMax(KoolDockSettings::smallIconSize(), KoolDockSettings::bigIconSize()) + 4;
     const int tooltipReserve = KoolDockSettings::showNames()
         ? ((screenEdge() == Qt::LeftEdge || screenEdge() == Qt::RightEdge)
             ? KoolDockSettings::tooltipSize() * 25 + 32   // vertical: wide tooltip
@@ -925,7 +932,7 @@ void KoolDock::applyInputMask(bool hidden)
         // whichever is larger — so the mask never retracts below a zone
         // QML still considers "hovering".
         const int shortLen = qMax(bgHeight,
-                                  KoolDockSettings::bigIconSize() + 2 * spacing + 4);
+                                  qMax(KoolDockSettings::smallIconSize(), KoolDockSettings::bigIconSize()) + 2 * spacing + 4);
         QRect band;
         switch (screenEdge()) {
         case Qt::BottomEdge:
@@ -1410,8 +1417,10 @@ void KoolDock::showAppMenu()
     // Open the KDE application launcher (Kickoff).  plasmawindowed shows
     // the widget in a standalone window on Plasma 6; fall back to krunner
     // on systems where plasmawindowed isn't installed.
-    QProcess::startDetached(QStringLiteral("plasmawindowed"),
-        {QStringLiteral("org.kde.plasma.kickoff")});
+    if (!QProcess::startDetached(QStringLiteral("plasmawindowed"),
+                                 {QStringLiteral("org.kde.plasma.kickoff")})) {
+        QProcess::startDetached(QStringLiteral("krunner"));
+    }
 }
 
 void KoolDock::peekWindows(const QStringList &uuids)
@@ -1453,29 +1462,37 @@ void KoolDock::trashFiles(const QVariantList &urls)
 
 bool KoolDock::isTrashEmpty() const
 {
-    const QString trashFiles = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
-                               + QStringLiteral("/Trash/files");
-    QDir dir(trashFiles);
-    if (!dir.exists()) return true;
-    return dir.entryInfoList(QDir::Dirs | QDir::Files | QDir::NoDotAndDotDot | QDir::Hidden).isEmpty();
+    return m_trashIsEmpty;
 }
 
 void KoolDock::updateTrashState()
 {
-    const bool empty = isTrashEmpty();
-    if (m_trashIsEmpty != empty) {
-        m_trashIsEmpty = empty;
-        Q_EMIT trashIsEmptyChanged();
-    }
+    if (m_trashCheckPending) return;
+    m_trashCheckPending = true;
+    m_trashListingHasEntries = false;
+    auto *job = KIO::listDir(QUrl(QStringLiteral("trash:/")), KIO::HideProgressInfo);
+    connect(job, &KIO::ListJob::entries, this, [this](KIO::Job *, const KIO::UDSEntryList &entries) {
+        for (const auto &entry : entries) {
+            const QString name = entry.stringValue(KIO::UDSEntry::UDS_NAME);
+            if (name != QLatin1String(".") && name != QLatin1String("..")) {
+                m_trashListingHasEntries = true;
+                break;
+            }
+        }
+    });
+    connect(job, &KJob::result, this, [this](KJob *finished) {
+        m_trashCheckPending = false;
+        if (finished->error()) return;
+        const bool empty = !m_trashListingHasEntries;
+        if (m_trashIsEmpty != empty) {
+            m_trashIsEmpty = empty;
+            Q_EMIT trashIsEmptyChanged();
+        }
+    });
 }
 
 void KoolDock::emptyTrash()
 {
-    const QString trashRoot = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
-                              + QStringLiteral("/Trash");
-    QDir(trashRoot + QStringLiteral("/files")).removeRecursively();
-    QDir(trashRoot + QStringLiteral("/info")).removeRecursively();
-    // Recreate the directories so the trash can still receive files.
-    QDir().mkpath(trashRoot + QStringLiteral("/files"));
-    QDir().mkpath(trashRoot + QStringLiteral("/info"));
+    auto *job = KIO::emptyTrash();
+    connect(job, &KJob::result, this, [this](KJob *) { updateTrashState(); });
 }

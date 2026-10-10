@@ -110,6 +110,13 @@ void PlasmaWindow::org_kde_plasma_window_themed_icon_name_changed(const QString 
     Q_EMIT infoChanged();
 }
 
+void PlasmaWindow::org_kde_plasma_window_initial_state()
+{
+    if (m_initialStateReceived) return;
+    m_initialStateReceived = true;
+    Q_EMIT initialStateReceivedSignal();
+}
+
 void PlasmaWindow::org_kde_plasma_window_unmapped()
 {
     Q_EMIT unmapped();
@@ -155,6 +162,7 @@ quint64 PlasmaWindowManagement::addWindow(const QString &uuid)
 
     struct ::org_kde_plasma_window *windowObject = get_window_by_uuid(uuid);
     if (!windowObject) {
+        m_uuidToId.remove(uuid);
         qWarning() << "PlasmaWindowManagement::addWindow get_window_by_uuid returned null for uuid=" << uuid;
         return 0;
     }
@@ -165,10 +173,9 @@ quint64 PlasmaWindowManagement::addWindow(const QString &uuid)
     connect(window, &PlasmaWindow::infoChanged, this, [this, windowId]() {
         onWindowInfoChanged(windowId);
     });
+    connect(window, &PlasmaWindow::initialStateReceivedSignal, this, &PlasmaWindowManagement::onWindowInitialState);
     connect(window, &PlasmaWindow::unmapped, this, &PlasmaWindowManagement::onWindowUnmapped);
 
-    Q_EMIT windowAdded(windowId);
-    updateActiveWindow();
     return windowId;
 }
 
@@ -213,10 +220,8 @@ void PlasmaWindowManagement::org_kde_plasma_window_management_window(uint32_t id
     connect(window, &PlasmaWindow::infoChanged, this, [this, windowId]() {
         onWindowInfoChanged(windowId);
     });
+    connect(window, &PlasmaWindow::initialStateReceivedSignal, this, &PlasmaWindowManagement::onWindowInitialState);
     connect(window, &PlasmaWindow::unmapped, this, &PlasmaWindowManagement::onWindowUnmapped);
-
-    Q_EMIT windowAdded(windowId);
-    updateActiveWindow();
 }
 
 void PlasmaWindowManagement::org_kde_plasma_window_management_window_with_uuid(uint32_t id, const QString &uuid)
@@ -243,7 +248,19 @@ void PlasmaWindowManagement::org_kde_plasma_window_management_stacking_order_cha
 
 void PlasmaWindowManagement::onWindowInfoChanged(quint64 id)
 {
+    // Initial title/appId/state arrive separately; wait for initial_state so
+    // skip-taskbar windows never briefly enter the dock with default flags.
+    PlasmaWindow *window = m_windows.value(id);
+    if (!window || !window->initialStateReceived()) return;
     Q_EMIT windowChanged(id);
+    updateActiveWindow();
+}
+
+void PlasmaWindowManagement::onWindowInitialState()
+{
+    auto *window = qobject_cast<PlasmaWindow *>(sender());
+    if (!window || m_windows.value(window->info().windowId) != window) return;
+    Q_EMIT windowAdded(window->info().windowId);
     updateActiveWindow();
 }
 
@@ -255,12 +272,14 @@ void PlasmaWindowManagement::onWindowUnmapped()
     }
 
     const quint64 id = window->info().windowId;
+    if (m_windows.value(id) != window) return;
     if (m_activeWindow == id) {
         m_activeWindow = 0;
         Q_EMIT activeWindowChanged(0);
     }
 
     m_windows.remove(id);
+    m_uuidToId.remove(uuidForId(id));
     window->deleteLater();
     Q_EMIT windowRemoved(id);
 }
@@ -269,7 +288,8 @@ void PlasmaWindowManagement::updateActiveWindow()
 {
     quint64 newActive = 0;
     for (auto it = m_windows.cbegin(); it != m_windows.cend(); ++it) {
-        if (it.value()->info().state & QtWayland::org_kde_plasma_window_management::state_active) {
+        if (it.value()->initialStateReceived() &&
+            (it.value()->info().state & QtWayland::org_kde_plasma_window_management::state_active)) {
             newActive = it.key();
             break;
         }
@@ -411,7 +431,14 @@ void WaylandWindowTasks::handleRegistryGlobal(struct ::wl_registry *registry, ui
 
 QList<quint64> WaylandWindowTasks::windowIds() const
 {
-    return m_management ? m_management->windows().keys() : QList<quint64>{};
+    QList<quint64> ids;
+    if (m_management) {
+        const auto &windows = m_management->windows();
+        for (auto it = windows.cbegin(); it != windows.cend(); ++it) {
+            if (it.value()->initialStateReceived()) ids.append(it.key());
+        }
+    }
+    return ids;
 }
 
 quint64 WaylandWindowTasks::activeWindow() const

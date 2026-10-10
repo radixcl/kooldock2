@@ -11,6 +11,7 @@
 #include "windowtasks.h"
 
 #include <KDesktopFile>
+#include <KDesktopFileAction>
 #include <KConfigGroup>
 #include <KService>
 #include <KWindowInfo>
@@ -24,6 +25,7 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QRegularExpression>
+#include <QUrl>
 
 // Strip freedesktop.org field codes (%u, %U, %f, %F, %% etc.)
 // from an Exec= line. KIO::CommandLauncherJob does not expand these,
@@ -271,7 +273,9 @@ void DockModel::reload()
     // rows that don't match the final, post-reload state yet. Block them
     // until the rebuild below is complete and this function emits its own.
     m_loading = true;
+    beginResetModel();
 
+    qDeleteAll(m_items);
     m_items.clear();
     m_taskItems.clear();
 
@@ -301,10 +305,10 @@ void DockModel::reload()
 
     m_loading = false;
 
-    beginResetModel();
     endResetModel();
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
+    m_launcherWatcher->replayBadges();
 }
 
 void DockModel::updateIndices()
@@ -450,7 +454,7 @@ void DockModel::onWindowAdded(quint64 windowId)
             launcher->setMinimized(data.minimized);
             m_taskItems.insert(windowId, launcher);
             const int row = m_items.indexOf(launcher);
-            if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+            if (row >= 0 && !m_loading) Q_EMIT dataChanged(index(row), index(row));
             if (!m_loading) {
                 if (row >= 0) Q_EMIT itemChanged(row);
                 Q_EMIT countChanged();
@@ -465,7 +469,7 @@ void DockModel::onWindowAdded(quint64 windowId)
         launcher->setMinimized(data.minimized);
         m_taskItems.insert(windowId, launcher);
         const int row = m_items.indexOf(launcher);
-        if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+        if (row >= 0 && !m_loading) Q_EMIT dataChanged(index(row), index(row));
         if (!m_loading) {
             if (row >= 0) Q_EMIT itemChanged(row);
             Q_EMIT itemsChanged();
@@ -485,7 +489,7 @@ void DockModel::onWindowAdded(quint64 windowId)
         existingTask->setName(data.title);
         m_taskItems.insert(windowId, existingTask);
         const int row = m_items.indexOf(existingTask);
-        if (row >= 0) Q_EMIT dataChanged(index(row), index(row));
+        if (row >= 0 && !m_loading) Q_EMIT dataChanged(index(row), index(row));
         if (!m_loading) {
             if (row >= 0) Q_EMIT itemChanged(row);
             Q_EMIT itemsChanged();
@@ -569,7 +573,12 @@ void DockModel::onWindowRemoved(quint64 windowId)
 
 void DockModel::onWindowChanged(quint64 windowId)
 {
-    if (!m_taskItems.contains(windowId) || !m_tasks) return;
+    if (!m_tasks) return;
+    if (!m_taskItems.contains(windowId)) {
+        // A window initially excluded from the dock can become eligible later.
+        onWindowAdded(windowId);
+        return;
+    }
 
     Item *item = m_taskItems.value(windowId);
     const WindowTasks::TaskData data = m_tasks->taskData(windowId);
@@ -580,77 +589,13 @@ void DockModel::onWindowChanged(quint64 windowId)
         return;
     }
 
-    // When a standalone task gets its appId filled in for the first time
-    // (Wayland delivers app_id asynchronously after window creation), check
-    // if there's a matching launcher or existing task to group with.
-    if (item->isTask() && item->appId().isEmpty() && !data.appId.isEmpty()) {
-        item->setAppId(data.appId);
-
-        // Try to find a launcher to fuse with
-        Item *launcher = findLauncherForAppId(data.appId);
-        if (launcher) {
-            if (m_debug) qDebug() << "  retro-fusing with launcher" << launcher->name();
-            // Remove the standalone task and move window to launcher
-            m_taskItems.remove(windowId);
-            m_taskItems.insert(windowId, launcher);
-            if (!launcher->isRunning()) {
-                launcher->setRunning(true);
-                launcher->setWindowId(windowId);
-            } else {
-                launcher->addGroupedWindowId(windowId);
-            }
-            launcher->setActive(data.active);
-            launcher->setMinimized(data.minimized);
-            item->setAppId(QString());
-            const int oldRow = m_items.indexOf(item);
-            if (oldRow >= 0) {
-                beginRemoveRows({}, oldRow, oldRow);
-                m_items.removeAt(oldRow);
-                endRemoveRows();
-                updateIndices();
-                Q_EMIT itemRemoved(oldRow);
-                Q_EMIT countChanged();
-            }
-            delete item;
-            const int newRow = m_items.indexOf(launcher);
-            if (newRow >= 0) {
-                Q_EMIT dataChanged(index(newRow), index(newRow));
-                Q_EMIT itemChanged(newRow);
-            }
-            Q_EMIT itemsChanged();
-            return;
-        }
-
-        // Try to find an existing standalone task to group with
-        Item *existingTask = findTaskForAppId(data.appId);
-        if (existingTask && existingTask != item) {
-            if (m_debug) qDebug() << "  retro-grouping with existing task" << existingTask->name();
-            // Remove this standalone task and move window to the existing task
-            m_taskItems.remove(windowId);
-            m_taskItems.insert(windowId, existingTask);
-            existingTask->addGroupedWindowId(windowId);
-            existingTask->setActive(data.active);
-            existingTask->setMinimized(data.minimized);
-            existingTask->setName(data.title);
-            item->setAppId(QString());
-            const int oldRow = m_items.indexOf(item);
-            if (oldRow >= 0) {
-                beginRemoveRows({}, oldRow, oldRow);
-                m_items.removeAt(oldRow);
-                endRemoveRows();
-                updateIndices();
-                Q_EMIT itemRemoved(oldRow);
-                Q_EMIT countChanged();
-            }
-            delete item;
-            const int newRow = m_items.indexOf(existingTask);
-            if (newRow >= 0) {
-                Q_EMIT dataChanged(index(newRow), index(newRow));
-                Q_EMIT itemChanged(newRow);
-            }
-            Q_EMIT itemsChanged();
-            return;
-        }
+    // An app_id can arrive late or change later. Move only this window to
+    // its new launcher/task; keep the other windows in the old group.
+    if ((item->isTask() && item->appId() != data.appId) ||
+        (item->isLauncher() && !data.appId.isEmpty() && findLauncherForAppId(data.appId) != item)) {
+        onWindowRemoved(windowId);
+        onWindowAdded(windowId);
+        return;
     }
 
     // Update fused launcher or standalone task.
@@ -718,8 +663,11 @@ void DockModel::addLauncherAt(const QString &filePath, int row)
     // moveLauncher uses. The renumber renames existing launcher copies on
     // disk; resyncLauncherDesktopFiles() below refreshes the stored paths.
     m_suppressReload = true;
-    m_launchers->addLauncherAt(filePath, launcherIdx);
+    const QString localFile = filePath.startsWith(QStringLiteral("file://"))
+        ? QUrl(filePath).toLocalFile() : filePath;
+    const bool added = m_launchers->addLauncherAt(localFile, launcherIdx);
     m_suppressReload = false;
+    if (!added) return;
 
     // Pull the freshly-added launcher (at its final order index) out of a
     // reload of the on-disk list; discard the rest, keep existing items.
@@ -754,10 +702,19 @@ void DockModel::addLauncherAt(const QString &filePath, int row)
     Q_EMIT itemInserted(modelRow);
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
-    // ponytail: skips fusing the new launcher with an already-running window
-    // of the same app (a rare "add a launcher for a running app" case). They
-    // show as two icons until the next reload re-fuses them. Add a targeted
-    // fuse here if that combination turns out to matter.
+
+    // A newly pinned app may already have standalone tasks. Rehome only the
+    // windows matching this launcher, preserving any other task groups.
+    QList<quint64> matchingWindows;
+    for (auto it = m_taskItems.cbegin(); it != m_taskItems.cend(); ++it) {
+        Item *task = it.value();
+        if (task->isTask() && !task->appId().isEmpty() && findLauncherForAppId(task->appId()) == newItem)
+            matchingWindows.append(it.key());
+    }
+    for (quint64 id : std::as_const(matchingWindows)) {
+        onWindowRemoved(id);
+        onWindowAdded(id);
+    }
 }
 
 void DockModel::removeLauncher(int row)
@@ -776,11 +733,10 @@ void DockModel::removeLauncher(int row)
     m_launchers->removeLauncher(launcherIdx);
     m_suppressReload = false;
 
-    // If this launcher was fused with a window, un-fuse it so the task
-    // doesn't try to reference the deleted item.
-    if (item->windowId() && m_taskItems.contains(item->windowId())) {
-        m_taskItems.remove(item->windowId());
-    }
+    // Detach every grouped window before deleting the launcher; otherwise
+    // secondary IDs keep dangling pointers in m_taskItems.
+    const QList<quint64> windows = item->groupedWindowIds();
+    for (quint64 id : windows) m_taskItems.remove(id);
 
     beginRemoveRows({}, row, row);
     m_items.removeAt(row);
@@ -791,6 +747,20 @@ void DockModel::removeLauncher(int row)
     Q_EMIT itemRemoved(row);
     Q_EMIT countChanged();
     Q_EMIT itemsChanged();
+    // Running windows remain visible as a standalone (possibly grouped) task.
+    for (quint64 id : windows) onWindowAdded(id);
+}
+
+void DockModel::removeLauncherItem(QObject *item)
+{
+    // The poof timer may fire after inserts, moves, or a full model reload.
+    // Compare identity without dereferencing a possibly destroyed object.
+    for (int row = 0; row < m_items.size(); ++row) {
+        if (m_items.at(row) == item) {
+            removeLauncher(row);
+            return;
+        }
+    }
 }
 
 void DockModel::moveLauncher(int from, int to)
@@ -991,7 +961,9 @@ void DockModel::triggerDesktopAction(int row, const QString &actionId)
     const QString exec = group.readEntry(QStringLiteral("Exec"), QString());
     if (exec.isEmpty()) return;
 
-    auto *job = new KIO::CommandLauncherJob(stripExecFieldCodes(exec));
+    auto *job = new KIO::ApplicationLauncherJob(KDesktopFileAction(
+        actionId, group.readEntry(QStringLiteral("Name"), actionId),
+        group.readEntry(QStringLiteral("Icon"), QString()), exec, desktopFile));
     job->setUiDelegate(nullptr);
     job->start();
 }
